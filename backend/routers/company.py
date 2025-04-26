@@ -39,6 +39,8 @@ class CompetitorResponse(BaseModel):
     description: Optional[str] = None
     strengths: Optional[List[str]] = None
     weaknesses: Optional[List[str]] = None
+    deep_research_status: Optional[str] = None
+    deep_research_markdown: Optional[str] = None
 
 class CompetitorsListResponse(BaseModel):
     company_id: str
@@ -121,7 +123,9 @@ async def get_company_competitors(company_id: str):
                 "company_id": competitor["company_id"],
                 "description": competitor.get("description"),
                 "strengths": competitor.get("strengths", []),
-                "weaknesses": competitor.get("weaknesses", [])
+                "weaknesses": competitor.get("weaknesses", []),
+                "deep_research_status": competitor.get("deep_research_status"),
+                "deep_research_markdown": competitor.get("deep_research_markdown")
             })
         
         return {
@@ -194,6 +198,14 @@ async def process_company_data(company_id: str):
         # 4. Generate insights (handled by insights router)
         logger.info(f"Triggering insight generation for {company['name']}...")
         await generate_company_insights(company_id)
+        
+        # 5. Update RAG index with all data
+        try:
+            from services.rag_service import rag_service
+            logger.info(f"Updating RAG index for {company['name']}...")
+            await rag_service.update_rag_index(company_id)
+        except ImportError:
+            logger.info("RAG service not available, skipping index update.")
 
         logger.info(f"Completed processing company data for {company['name']}")
 

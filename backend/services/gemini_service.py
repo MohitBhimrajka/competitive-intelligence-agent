@@ -4,6 +4,7 @@ import re
 from google import genai
 from google.genai import types
 import logging
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,6 +16,8 @@ class GeminiService:
             api_key = os.getenv("GOOGLE_API_KEY")
             self.client = genai.Client(api_key=api_key)
             self.model = "gemini-2.5-flash-preview-04-17"  # Using standard model instead of flash preview
+            self.pro_model = "gemini-2.5-pro-preview-03-25"  # For deep research
+            self.temperature = 0.81  # Set temperature for all model calls
             logger.info("Gemini service initialized")
         except Exception as e:
             logger.error(f"Error initializing Gemini service: {e}")
@@ -74,6 +77,7 @@ class GeminiService:
             generate_content_config = types.GenerateContentConfig(
                 tools=tools,
                 response_mime_type="text/plain",
+                temperature=self.temperature,
             )
             
             # Collect the full response from stream
@@ -158,6 +162,7 @@ class GeminiService:
             generate_content_config = types.GenerateContentConfig(
                 tools=tools,
                 response_mime_type="text/plain",
+                temperature=self.temperature,
             )
             
             # Collect the full response from stream
@@ -277,4 +282,92 @@ class GeminiService:
                 
         except Exception as e:
             logger.error(f"Error generating insights: {e}")
-            raise 
+            raise
+
+    async def deep_research_competitor(self, competitor_name: str, competitor_description: Optional[str]):
+        """Generates an in-depth research report for a competitor using a Pro model."""
+        logger.info(f"Starting deep research for: {competitor_name} using model {self.pro_model}")
+
+        # --- DETAILED PROMPT ---
+        prompt = f"""
+        Generate a comprehensive competitive analysis report in Markdown format for the company: **{competitor_name}**.
+        Use its known description as a starting point: "{competitor_description or 'No initial description provided.'}"
+
+        Structure the report with the following sections using appropriate Markdown headings (e.g., ## Section Title):
+
+        1.  **Company Overview:**
+            *   Detailed description of the company, its mission, vision, and core business.
+            *   History and founding details (if available).
+            *   Key locations, size (employee count estimates), and organizational structure highlights.
+
+        2.  **Products & Services:**
+            *   Detailed breakdown of major product lines and service offerings.
+            *   Target customer segments for each offering.
+            *   Key features, functionalities, and unique selling propositions (USPs).
+            *   Pricing model overview (e.g., subscription tiers, enterprise pricing, freemium).
+
+        3.  **Technology & Innovation:**
+            *   Core technologies utilized (AI/ML models, platforms, infrastructure).
+            *   Recent technological advancements or R&D focus areas.
+            *   Patents or notable intellectual property (if discoverable).
+            *   Approach to innovation (e.g., internal R&D, acquisitions, partnerships).
+
+        4.  **Market Position & Strategy:**
+            *   Estimated market share or standing within its primary industry segment(s).
+            *   Key competitive advantages.
+            *   Go-to-market strategy (sales channels, marketing approaches).
+            *   Recent strategic moves (major partnerships, M&A activity, geographic expansion).
+
+        5.  **Financial Health & Funding (if publicly available/discoverable):**
+            *   Overview of financial performance (revenue trends, profitability if reported).
+            *   Major funding rounds (dates, amounts, key investors).
+            *   Stock performance overview (if public).
+
+        6.  **SWOT Analysis:**
+            *   Strengths: Internal capabilities that provide an advantage.
+            *   Weaknesses: Internal limitations or disadvantages.
+            *   Opportunities: External factors the company could leverage.
+            *   Threats: External factors that could negatively impact the company.
+            *   (Provide brief explanations for each point)
+
+        7.  **Recent News & Developments (Summarized):**
+            *   Summary of key news headlines, press releases, or significant announcements from the last 6-12 months. Focus on strategically relevant items.
+
+        8.  **Key Personnel:**
+            *   CEO and other key executives (names, roles, brief background if notable).
+
+        **Instructions:**
+        *   Conduct thorough research using available tools.
+        *   Synthesize information into a coherent report.
+        *   Use clear and professional language.
+        *   Format the entire output strictly as Markdown.
+        *   Do not include any preamble or explanation outside the Markdown report itself. Start directly with the first heading.
+        """
+        # --- END DETAILED PROMPT ---
+
+        try:
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+            # Use Google Search tool for grounding
+            tools = [types.Tool(google_search=types.GoogleSearch())]
+            generate_content_config = types.GenerateContentConfig(
+                tools=tools,
+                response_mime_type="text/plain", # Requesting Markdown, but API expects text
+            )
+
+            # Use the Pro model for this call
+            response_text = ""
+            for chunk in self.client.models.generate_content_stream(
+                model=self.pro_model, # Use the Pro model here
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if hasattr(chunk, 'text'):
+                    response_text += chunk.text
+
+            # Assume the response is the Markdown content
+            logger.info(f"Deep research content generated for: {competitor_name}")
+            return response_text
+
+        except Exception as e:
+            logger.error(f"Error during deep research for {competitor_name}: {e}")
+            return f"## Error\n\nAn error occurred during deep research generation for {competitor_name}:\n\n```\n{str(e)}\n```" 

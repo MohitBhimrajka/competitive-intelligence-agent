@@ -65,11 +65,23 @@ class InMemoryDB:
             "description": description,
             "strengths": strengths or [],
             "weaknesses": weaknesses or [],
+            "deep_research_markdown": None,
+            "deep_research_status": "not_started",
             "created_at": datetime.now()
         }
         self.competitors[competitor_id] = competitor
         logger.info(f"Created competitor: {name} (ID: {competitor_id})")
         return competitor
+    
+    async def update_competitor_research(self, competitor_id: str, markdown: Optional[str] = None, status: str = "completed") -> Optional[Dict[str, Any]]:
+        competitor = self.competitors.get(competitor_id)
+        if competitor:
+            competitor["deep_research_markdown"] = markdown
+            competitor["deep_research_status"] = status
+            logger.info(f"Updated deep research for competitor {competitor_id} with status: {status}")
+            return competitor
+        logger.error(f"Competitor {competitor_id} not found for research update.")
+        return None
     
     async def get_competitor(self, competitor_id: str) -> Optional[Dict[str, Any]]:
         return self.competitors.get(competitor_id)

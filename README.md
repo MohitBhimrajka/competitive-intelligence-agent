@@ -11,20 +11,81 @@ A powerful AI-powered competitive intelligence platform that automates competito
 - Interactive dashboards with competitor analysis
 - User-friendly interface
 
+## New Features
+
+### Deep Competitor Research
+Generate comprehensive, detailed research reports about competitors using a powerful AI model.
+
+- **Trigger research**: Send a POST request to `/api/competitor/{competitor_id}/deep-research`
+- **Check status**: The competitors list endpoint will include `deep_research_status` (not_started, pending, completed, error)
+- **View report**: Access the markdown content from the competitors list endpoint in the `deep_research_markdown` field
+- **Download as PDF**: GET `/api/competitor/{competitor_id}/deep-research/download` returns a downloadable PDF
+
+### RAG Chat Interface
+Ask questions about your competitors and get answers based on all available data.
+
+- **Send queries**: POST to `/api/chat/{company_id}` with a JSON body containing a `query` field
+- **Example**: `{ "query": "What are the strengths of Competitor X?" }`
+- **RAG-powered**: Uses embeddings and semantic search to find relevant information across all company data, deep research reports, news, and insights
+
 ## Tech Stack
 
 ### Backend
+- Python 3.11 or higher
 - FastAPI
-- Google Gemini API for AI processing
-- News API for competitor news
-- Python 3.9+
-- In-memory database (can be upgraded to PostgreSQL)
+- LangChain
+- Google Gemini API
+- News API
 
 ### Frontend
-- TypeScript
-- Vite
 - React
-- TailwindCSS
+- Chakra UI
+- Next.js
+- TypeScript
+
+## Installation
+
+1. Install dependencies:
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+2. Set up your Google API key with a `.env` file:
+```
+GOOGLE_API_KEY=your_api_key_here
+NEWS_API_KEY=your_news_api_key_here
+```
+
+3. Run the application:
+```bash
+cd backend
+python main.py
+```
+
+The server will be available at http://localhost:8000.
+
+## API Usage
+
+1. Create/analyze a company:
+   - POST `/api/company` with body `{"name": "Apple"}`
+   - Returns a company ID and kicks off background processing
+
+2. Monitor results:
+   - GET `/api/company/{company_id}` - Company details
+   - GET `/api/company/{company_id}/competitors` - Competitor analysis
+   - GET `/api/news/company/{company_id}` - News articles
+
+3. Use new features:
+   - For any competitor, trigger deep research with POST `/api/competitor/{competitor_id}/deep-research`
+   - Ask questions with POST `/api/chat/{company_id}` and body `{"query": "What are the main competitors of this company?"}`
+
+## System Architecture
+
+- **FastAPI Backend**: Main API application with routers for various features
+- **In-Memory Database**: For demo purposes, data is stored in-memory (can be replaced with proper database)
+- **Google Gemini Models**: Powers analysis, deep research (Pro model), and chat functionality
+- **RAG System**: Enables querying across all collected data using semantic search
 
 ## Architecture
 

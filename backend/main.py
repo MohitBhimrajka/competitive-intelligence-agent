@@ -22,12 +22,14 @@ app.add_middleware(
 )
 
 # Import routers
-from routers import company, news, insights
+from routers import company, news, insights, competitors, chat
 
 # Include routers
 app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(insights.router, prefix="/api/insights", tags=["insights"])
+app.include_router(competitors.router, prefix="/api/competitor", tags=["competitors"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 @app.get("/")
 async def root():
