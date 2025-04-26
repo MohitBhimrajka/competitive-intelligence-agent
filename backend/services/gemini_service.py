@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from google import genai
 from google.genai import types
 import logging
@@ -10,17 +11,33 @@ logger = logging.getLogger(__name__)
 class GeminiService:
     def __init__(self):
         try:
-            # Initialize Gemini client using the newer API structure
-            self.client = genai.Client(
-                vertexai=True,
-                project="",
-                location="",
-                api_key=os.getenv("GOOGLE_API_KEY")
-            )
-            self.model = "gemini-2.5-flash-preview-04-17"
+            # Initialize Gemini client using direct API key (not Vertex AI)
+            api_key = os.getenv("GOOGLE_API_KEY")
+            self.client = genai.Client(api_key=api_key)
+            self.model = "gemini-2.5-flash-preview-04-17"  # Using standard model instead of Vertex preview
             logger.info("Gemini service initialized")
         except Exception as e:
             logger.error(f"Error initializing Gemini service: {e}")
+            raise
+
+    def _extract_json_from_response(self, response_text):
+        """Extract JSON from response text, handling markdown code blocks."""
+        # Check if response is wrapped in markdown code blocks
+        json_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
+        match = re.search(json_pattern, response_text)
+        
+        if match:
+            # Extract the JSON part from inside the code block
+            json_str = match.group(1)
+        else:
+            # Use the whole response if no code block is found
+            json_str = response_text
+            
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON: {e}")
+            logger.error(f"Response text was: {response_text}")
             raise
 
     async def analyze_company(self, company_name: str):
@@ -65,7 +82,7 @@ class GeminiService:
             
             # Extract JSON from response
             try:
-                return json.loads(response_text)
+                return self._extract_json_from_response(response_text)
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from response: {response_text}")
                 # Fallback: create a basic structure
@@ -131,7 +148,7 @@ class GeminiService:
             
             # Extract JSON from response
             try:
-                return json.loads(response_text)
+                return self._extract_json_from_response(response_text)
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from competitors response: {response_text}")
                 # Return empty competitors list as fallback
@@ -202,7 +219,7 @@ class GeminiService:
             
             # Extract JSON from response
             try:
-                return json.loads(response_text)
+                return self._extract_json_from_response(response_text)
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from insights response: {response_text}")
                 # Return empty insights list as fallback
