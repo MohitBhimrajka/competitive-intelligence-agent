@@ -79,4 +79,12 @@ dist-ssr
 *.local
 
 # Generated files
-.cache/ 
+.cache/
+
+# RAG Index files
+backend/indexes/
+*.index
+*.faiss
+*.pkl
+*.bin
+test_run.log 

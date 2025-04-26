@@ -26,8 +26,17 @@ def main():
                         help='Only check status of existing company (requires --id)')
     parser.add_argument('--id', type=str, 
                         help='Company ID for status check (required with --check-only)')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Show more detailed log output')
+    parser.add_argument('--competitor-check', action='store_true',
+                        help='Only check competitor status (requires --id)')
     
     args = parser.parse_args()
+    
+    # Set logging level based on verbose flag
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+        print("Verbose logging enabled")
     
     if args.check_only:
         if not args.id:
@@ -37,6 +46,17 @@ def main():
         
         print(f"\nChecking status for company ID: {args.id}")
         check_feature_status(args.id)
+        return 0
+    
+    if args.competitor_check:
+        if not args.id:
+            print("Error: --id is required with --competitor-check")
+            parser.print_help()
+            return 1
+        
+        print(f"\nChecking competitors for company ID: {args.id}")
+        from test_api import get_company_competitors
+        get_company_competitors(args.id)
         return 0
     
     print(f"\nRunning full test workflow for company: {args.company}")

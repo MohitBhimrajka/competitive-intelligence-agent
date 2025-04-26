@@ -1,7 +1,7 @@
 # Base packages
 python-dotenv==1.0.0
-pydantic==2.5.2
-typing-extensions==4.11.0
+pydantic>=2.7,<3.0
+typing-extensions>=4.12.1,<5
 python-multipart==0.0.6
 requests==2.31.0
 

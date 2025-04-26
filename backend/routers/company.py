@@ -157,7 +157,7 @@ async def process_company_data(company_id: str):
         
         # 1. Analyze company details (description, industry, welcome message)
         logger.info(f"Analyzing details for {company['name']}...")
-        company_analysis = await gemini_service.analyze_company(company["name"])
+        company_analysis = await gemini_service.analyze_company(company["name"], max_retries=1)
         await db.update_company(
             company_id=company_id,
             description=company_analysis.get("description"),
@@ -173,11 +173,13 @@ async def process_company_data(company_id: str):
 
         # 2. Identify competitors
         logger.info(f"Identifying competitors for {company['name']}...")
-        competitors_data = await gemini_service.identify_competitors(
-            company["name"],
-            company.get("description") or "",
-            company.get("industry") or ""
-        )
+        competitors_data = await gemini_service.identify_competitors(company["name"])
+        
+        # Log the results clearly
+        if not competitors_data or not competitors_data.get('competitors'):
+            logger.warning(f"No competitors identified for {company['name']}. This may indicate an issue with the API response.")
+        else:
+            logger.info(f"Successfully identified {len(competitors_data.get('competitors', []))} competitors for {company['name']}")
         
         # 3. Store competitors in database
         logger.info(f"Storing {len(competitors_data.get('competitors', []))} competitors...")

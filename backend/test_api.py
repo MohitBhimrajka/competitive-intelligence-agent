@@ -232,7 +232,17 @@ def get_company_news(company_id):
             if response.status_code == 200:
                 news_data = response.json()
                 
+                # If response is empty dict and competitors check shows no competitors, accept it as valid
                 if not news_data:
+                    # Check if there are actually no competitors
+                    comp_response = requests.get(f"{API_BASE_URL}/api/company/{company_id}/competitors")
+                    if comp_response.status_code == 200:
+                        comp_data = comp_response.json()
+                        if "competitors" in comp_data and len(comp_data["competitors"]) == 0:
+                            print("No competitors found, so empty news response is valid.")
+                            return {}  # Return empty dict as valid response
+                    
+                    # Otherwise, retry as before
                     print("No news data available yet, retrying in 2 seconds...")
                     time.sleep(2)
                     retry_count += 1
