@@ -36,14 +36,13 @@ class GeminiService:
         
         json_str = None
         if match:
-            json_str = match.group(1)
+            json_str = match.group(1).strip() # Added strip
             logger.debug("Found JSON inside markdown block.")
         else:
             # 2. If no markdown block, try finding the first '{' that likely starts the JSON
             brace_index = response_text.find('{')
             if brace_index != -1:
-                 # Try to find the corresponding closing brace (simple check, might fail on nested)
-                 # A more robust parser might be needed for complex cases, but this handles simple preamble
+                 # Try to find the corresponding closing brace (simple check)
                  potential_json = response_text[brace_index:]
                  # Basic validation: does it start with { and end with }?
                  if potential_json.strip().endswith('}'):
@@ -55,9 +54,13 @@ class GeminiService:
             else:
                 # 3. If no '{' found or markdown block, use the whole response
                 logger.debug("No JSON block or starting '{' found. Using full response text.")
-            json_str = response_text
-            
+                json_str = response_text
+
         try:
+            # Added basic check for empty string before parsing
+            if not json_str or not json_str.strip():
+                logger.error("Cannot parse empty JSON string.")
+                raise json.JSONDecodeError("Cannot parse empty JSON string.", "", 0)
             logger.info(f"Attempting to parse JSON string: {json_str[:200]}...") # Log more context
             return json.loads(json_str)
         except json.JSONDecodeError as e:
@@ -147,63 +150,70 @@ class GeminiService:
                 
     async def identify_competitors(self, company_name: str) -> dict:
         """Identify competitors for a given company."""
+        # This function uses generate_content (non-streaming), so it should be less prone
+        # to the stream processing issues. We'll focus on ensuring JSON parsing is robust.
+        logger.info(f"Identifying competitors for {company_name} using non-streaming call.")
         try:
             prompt = GeminiPrompts.identify_competitors(company_name)
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+            tools = [types.Tool(google_search=types.GoogleSearch())]
+            generate_content_config = types.GenerateContentConfig(
+                tools=tools,
+                response_mime_type="text/plain", # Expecting JSON, but request plain text
+                temperature=self.temperature,
+            )
 
-            # Try up to 3 times to get valid JSON
             max_attempts = 3
+            response_text = "" # Initialize
             for attempt in range(max_attempts):
+                logger.info(f"Attempt {attempt+1}/{max_attempts} to identify competitors for {company_name}")
                 try:
-                    contents = [
-                        types.Content(
-                            role="user",
-                            parts=[types.Part.from_text(text=prompt)],
-                        )
-                    ]
-                    tools = [types.Tool(google_search=types.GoogleSearch())]
-                    generate_content_config = types.GenerateContentConfig(
-                        tools=tools,
-                        response_mime_type="text/plain",
-                        temperature=self.temperature,
-                    )
-                    
-                    # Collect the full response
-                    response_text = ""
+                    # Use non-streaming call
                     response = self.client.models.generate_content(
                         model=self.model,
                         contents=contents,
                         config=generate_content_config,
                     )
-                    response_text = response.text
-                    
-                    # Clean the response before parsing
-                    response_text = self._clean_json_response(response_text)
-                    
-                    # Try to parse the JSON
-                    competitors_data = json.loads(response_text)
-                    
-                    # Validate the expected structure is present
-                    if "competitors" not in competitors_data or not isinstance(competitors_data["competitors"], list):
-                        raise ValueError("Response missing 'competitors' list")
-                    
-                    logging.info(f"Successfully identified competitors for {company_name}")
-                    return competitors_data
-                    
+                    response_text = response.text # Get the full text response
+
+                    if not response_text or not response_text.strip():
+                        logger.warning(f"Received empty response text on attempt {attempt+1}")
+                        raise ValueError("Empty response text")
+
+                    logger.debug(f"Raw response for competitor identification: {response_text[:500]}")
+
+                    # Try to parse the JSON using the robust extractor
+                    competitors_data = self._extract_json_from_response(response_text)
+
+                    # Validate the expected structure
+                    if not isinstance(competitors_data, dict) or "competitors" not in competitors_data or not isinstance(competitors_data["competitors"], list):
+                        logger.error(f"Invalid JSON structure received: {competitors_data}")
+                        raise ValueError("Response missing 'competitors' list or invalid structure")
+
+                    logger.info(f"Successfully identified and parsed competitors for {company_name}")
+                    return competitors_data # Success!
+
                 except (json.JSONDecodeError, ValueError) as e:
-                    logging.error(f"Attempt {attempt+1}/{max_attempts} - Failed to parse JSON: {str(e)}")
-                    if attempt == max_attempts - 1:  # If this was the last attempt
-                        logging.error(f"All {max_attempts} attempts failed. Returning empty competitors list.")
-                        logging.error(f"Last response: {response_text}")
-                        return {"competitors": []}
-                    # Wait briefly before retry
-                    time.sleep(1)
-            
-            # This should not be reached due to the return in the loop, but just in case
+                    logger.error(f"Attempt {attempt+1} failed: Error parsing JSON or validating structure: {str(e)}")
+                    if attempt == max_attempts - 1:
+                        logger.error(f"All {max_attempts} attempts failed for competitor identification.")
+                        logger.error(f"Last raw response text: {response_text}")
+                        return {"competitors": []} # Fallback
+                    await asyncio.sleep(1) # Wait before retry
+
+                except Exception as e:
+                    logger.error(f"Attempt {attempt+1} failed: Unexpected error during Gemini call: {str(e)}")
+                    if attempt == max_attempts - 1:
+                         logger.error(f"All {max_attempts} attempts failed due to API errors.")
+                         return {"competitors": []} # Fallback
+                    await asyncio.sleep(1) # Wait before retry
+
+            # Fallback if loop finishes unexpectedly
             return {"competitors": []}
-                
+
         except Exception as e:
-            logging.error(f"Error identifying competitors: {str(e)}")
-            return {"competitors": []}
+            logger.error(f"Critical error in identify_competitors function: {str(e)}")
+            return {"competitors": []} # General fallback
 
     def _clean_json_response(self, text: str) -> str:
         """Clean and repair common JSON formatting issues in the model response."""
@@ -286,43 +296,66 @@ class GeminiService:
         logger.info(f"Starting deep research for: {competitor_name} using model {self.pro_model}")
         company_context = f"for {company_name}" if company_name else ""
         prompt = GeminiPrompts.deep_research_competitor(competitor_name, competitor_description, company_name)
+        response_text = "" # Initialize
 
         try:
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
             tools = [types.Tool(google_search=types.GoogleSearch())]
-            generate_content_config = types.GenerateContentConfig(tools=tools, response_mime_type="text/plain", temperature=0.65)
+            generate_content_config = types.GenerateContentConfig(
+                tools=tools,
+                response_mime_type="text/plain",
+                temperature=0.65
+            )
 
             logger.info(f"Generating deep research using model: {self.pro_model} for {competitor_name}")
-            response_text = ""
-            # Consume stream synchronously
+
+            # --- CORRECTED STREAM HANDLING ---
             stream = self.client.models.generate_content_stream(
                 model=self.pro_model,
                 contents=contents,
                 config=generate_content_config,
             )
             for chunk in stream:
-                part = getattr(chunk, 'parts', [None])[0]
-                text = getattr(part, 'text', None) if part else None
-                if text:
-                    response_text += text
+                 # Use hasattr to check for text attribute directly on the chunk
+                 if hasattr(chunk, 'text'):
+                      response_text += chunk.text
+            # --- END CORRECTION ---
 
-            # --- MODIFIED VALIDATION ---
+
+            # --- VALIDATION and PREAMBLE STRIPPING ---
             if not response_text or len(response_text.strip()) < 100: # Basic check for empty or very short response
-                logger.warning(f"Deep research for {competitor_name} returned empty or unexpectedly short content.")
+                logger.warning(f"Deep research for {competitor_name} returned empty or unexpectedly short content (Length: {len(response_text.strip())}).")
                 logger.warning(f"Response snippet received: {response_text[:500]}")
-                # Return a specific error message instead of the raw (potentially empty) response
                 return f"## Error\n\nDeep research generation for {competitor_name} failed to produce sufficient content. The response was empty or too short."
 
-            logger.info(f"Deep research raw content generated for: {competitor_name} {company_context} (Length: {len(response_text)})")
+            # --- START PREAMBLE STRIPPING ---
+            cleaned_response_text = response_text.strip()
+            # Keep error/warning markdown as is
+            if cleaned_response_text.startswith("## Error") or cleaned_response_text.startswith("## Warning"):
+                logger.warning(f"Deep research for {competitor_name} resulted in a warning or error message from the service.")
+                # No stripping needed, return the error/warning markdown
+            # Check if it *doesn't* start with '#' but *does* contain a likely markdown header start ('# ')
+            elif not cleaned_response_text.startswith("#") and '# ' in cleaned_response_text:
+                first_header_index = cleaned_response_text.find('# ')
+                if first_header_index != -1:
+                    # Find the beginning of that line
+                    line_start_index = cleaned_response_text.rfind('\n', 0, first_header_index) + 1
+                    cleaned_response_text = cleaned_response_text[line_start_index:]
+                    logger.info(f"Stripped preamble from deep research for {competitor_name}.")
+                else:
+                    # Fallback if '# ' is present but logic fails - log warning
+                    logger.warning(f"Could not reliably strip preamble for {competitor_name}, despite detecting '# '. Using original.")
+            elif not cleaned_response_text.startswith("#"):
+                 logger.warning(f"Deep research for {competitor_name} did not start with '#' and no clear header found. Returning potentially unformatted content.")
+            # --- END PREAMBLE STRIPPING ---
 
-            # Optional: More specific check if needed (e.g., must start with '#')
-            if not response_text.strip().startswith("#"):
-                logger.warning(f"Deep research for {competitor_name} did not return expected Markdown format.")
-                return f"## Warning: Potential Formatting Issue\n\nThe generated content might not be in the expected Markdown format.\n\n```\n{response_text[:1000]}\n```"
+            logger.info(f"Deep research final content generated for: {competitor_name} {company_context} (Length: {len(cleaned_response_text)})")
+            logger.debug(f"Deep research content snippet after cleaning: {cleaned_response_text[:1000]}") # Log cleaned snippet
 
-            return response_text
-            # --- END MODIFICATION ---
+            return cleaned_response_text # Return the cleaned markdown
+            # --- END VALIDATION ---
 
         except Exception as e:
             logger.error(f"Error during deep research API call for {competitor_name} {company_context}: {e}", exc_info=True)
+            # Return a Markdown formatted error
             return f"## Error\n\nAn error occurred during the API call for deep research generation for {competitor_name}:\n\n```\n{str(e)}\n```" 

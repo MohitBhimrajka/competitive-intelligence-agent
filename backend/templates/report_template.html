@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{{ title }}</title>
+    <title>{{ report_title }}</title>
     <style>
         @page cover {
             /* Specific styles for the cover page if needed, like no margins */
@@ -21,7 +21,7 @@
             margin: 2cm; /* Standard margins */
 
             @top-center {
-                content: "{{ title }}";
+                content: "{{ report_title }}";
                 font-size: 9pt; color: #555; vertical-align: bottom; padding-bottom: 5mm;
                 border-bottom: 0.5pt solid #ccc; width: 100%;
             }
@@ -42,40 +42,52 @@
         .cover-page {
             page: cover; /* Apply cover page style */
             page-break-after: always;
-            /* height: 100%; Remove vh units */
             display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
-            /* Use padding or absolute positioning for layout if needed */
             padding: 2cm 0; /* Example padding */
             min-height: 25cm; /* Ensure it takes up most of the page */
         }
-        
         .cover-logo {
-            margin-bottom: 2cm;
+            /* Optional: Add styles if you include a logo image */
+            max-width: 150px; /* Example */
+            margin-bottom: 1.5cm;
         }
-        
         .cover-title {
             font-size: 28pt;
             font-weight: bold;
             color: #2c3e50;
-            margin-bottom: 1cm;
+            margin-bottom: 0.5cm; /* Reduced margin */
         }
-        
-        .cover-subtitle {
+        /* --- New Style for Subtitle --- */
+        .cover-subtitle-detail {
             font-size: 16pt;
             color: #34495e;
+            margin-bottom: 2cm; /* Increased margin after subtitle */
+            font-weight: normal;
+        }
+        /* --- End New Style --- */
+        .cover-report-type { /* Renamed from cover-subtitle */
+            font-size: 14pt; /* Adjusted size */
+            color: #7f8c8d;
             margin-bottom: 1cm;
         }
-        
         .cover-date {
             font-size: 12pt;
             color: #7f8c8d;
-            margin-bottom: 2cm;
+            margin-bottom: 3cm; /* Increased margin */
         }
-        
+        /* --- New Style for Agent Description --- */
+        .cover-agent-description {
+            font-size: 11pt;
+            color: #555;
+            margin-bottom: 1cm; /* Space before footer */
+            max-width: 70%; /* Limit width */
+        }
+        /* --- End New Style --- */
         .cover-footer {
             font-size: 10pt;
             color: #7f8c8d;
-            margin-top: 3cm;
+            margin-top: auto; /* Push footer towards bottom */
+             padding-bottom: 1cm; /* Add some padding at the bottom */
         }
         
         /* Table of contents */
@@ -87,7 +99,7 @@
         .toc-entry { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5cm; font-size: 11pt; }
         .toc-entry a { color: #2980b9; text-decoration: none; padding-right: 5px; }
         .toc-dots { flex-grow: 1; border-bottom: 1px dotted #bdc3c7; margin: 0 5px; position: relative; top: -3px; }
-        .toc-page::before { content: target-counter(attr(href url), page); } /* TOC page numbers */
+        .toc-page::before { content: target-counter(attr(href), page); } /* Update TOC page numbers selector */
 
         /* Content styling */
         .content {
@@ -149,18 +161,20 @@
     <!-- Cover page -->
     <div class="cover-page">
         <div class="cover-logo">
-            <!-- Logo could be added here -->
+            <!-- Optional: <img src="path/to/your/logo.png" alt="Logo"> -->
         </div>
-        <div class="cover-title">{{ title }}</div>
-        <div class="cover-subtitle">Competitive Intelligence Report</div>
+        <div class="cover-title">{{ report_title }}</div>
+        <div class="cover-subtitle-detail">{{ report_subtitle }}</div>
+        <div class="cover-report-type">Competitive Intelligence Report</div>
         <div class="cover-date">{{ date }}</div>
+        <div class="cover-agent-description">{{ agent_description }}</div>
         <div class="cover-footer">Developed by Competitive Intelligence Agent</div>
     </div>
     
     <!-- Table of Contents -->
     <div class="toc">
         <div class="toc-title">Table of Contents</div>
-        {{ toc_content }}
+        {{ toc_content|safe }}
     </div>
     
     <!-- Report Content -->

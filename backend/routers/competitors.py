@@ -9,6 +9,7 @@ import os
 import tempfile
 import markdown
 import asyncio  # Import asyncio
+import re  # Import regex
 
 from services.database import db
 from services.gemini_service import GeminiService
@@ -235,7 +236,7 @@ async def download_multiple_deep_research_pdf(request: MultiResearchRequest):
     # Check if all competitors have completed research
     not_completed_or_error = []
     completed_competitors_data = []
-    company_name = None
+    company_name = "Company" # Default name
     first_company_id = None
     
     for competitor_id in request.competitor_ids:
@@ -248,13 +249,13 @@ async def download_multiple_deep_research_pdf(request: MultiResearchRequest):
             first_company_id = competitor.get("company_id")
             company = await db.get_company(first_company_id)
             if company:
-                company_name = company.get("name")
+                company_name = company.get("name", "Company") # Use fetched name
                 
         status = competitor.get("deep_research_status")
         markdown_content = competitor.get("deep_research_markdown")
         
-        if status != "completed" or not markdown_content:
-            status_info = f"status: {status}" if status != 'completed' else "missing content"
+        if status != "completed" or not markdown_content or markdown_content.strip().startswith("## Error"):
+            status_info = f"status: {status}" if status != 'completed' else ("missing content" if not markdown_content else "error content")
             not_completed_or_error.append(f"{competitor['name']} ({status_info})")
         else:
             completed_competitors_data.append(competitor)
@@ -264,40 +265,45 @@ async def download_multiple_deep_research_pdf(request: MultiResearchRequest):
         raise HTTPException(status_code=404, detail=details)
     
     if not_completed_or_error:
-        # Log a warning if some are missing but we proceed with the completed ones
         logger.warning(f"Generating combined report, but research is not ready for: {', '.join(not_completed_or_error)}")
     
     # Create temp markdown files for each competitor
     temp_files = []
     try:
-        competitor_names = []
+        competitor_names = [comp['name'] for comp in completed_competitors_data]
         
         for competitor_data in completed_competitors_data:
-            competitor_names.append(competitor_data['name'])
             with tempfile.NamedTemporaryFile(delete=False, suffix='.md', mode='w', encoding='utf-8') as temp_f:
                 temp_f.write(competitor_data['deep_research_markdown'])
                 temp_files.append(temp_f.name)
         
-        # Generate title
-        title = "Competitive Intelligence Report: "
+        # Generate title for inside the report (cover page etc.)
+        report_internal_title = "Competitive Intelligence Report: "
         title_suffix = ", ".join(competitor_names[:2]) + (f" & {len(competitor_names)-2} more" if len(competitor_names) > 2 else "")
-        if company_name:
-            title += f"{company_name} vs {title_suffix}"
+        if company_name != "Company": # Use fetched company name if available
+            report_internal_title += f"{company_name} vs {title_suffix}"
         else:
-            title += title_suffix
+            report_internal_title += title_suffix
+
+        # --- Generate Filename ---
+        current_date_str = datetime.now().strftime('%Y%m%d')
+        # Sanitize company name for filename
+        safe_company_name = re.sub(r'[^\w\-]+', '_', company_name) # Replace non-alphanumeric/- with _
+        filename = f"{safe_company_name}_Multi_Competitor_Report_{current_date_str}.pdf"
+        # --- End Filename Generation ---
         
-        # Generate PDF from combined markdown
-        pdf_buffer = pdf_service.generate_combined_report_pdf(temp_files, competitor_names, title)
-        
-        # Create filename
-        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_')).rstrip().replace(' ', '_')
-        filename = f"{safe_title}_Combined_Report.pdf"
+        # Generate PDF from combined markdown using the internal title
+        pdf_buffer = pdf_service.generate_combined_report_pdf(
+            temp_files, 
+            competitor_names, 
+            title=report_internal_title # Title used *inside* the report
+        )
         
         logger.info(f"Combined PDF report generated successfully for {len(completed_competitors_data)} competitors")
         return StreamingResponse(
             pdf_buffer,
             media_type='application/pdf',
-            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'} # Use the new filename here
         )
     
     except Exception as e:
