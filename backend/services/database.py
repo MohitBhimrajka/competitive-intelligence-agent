@@ -16,18 +16,34 @@ class InMemoryDB:
         logger.info("In-memory database initialized")
     
     # Company operations
-    async def create_company(self, name: str, description: Optional[str] = None, industry: Optional[str] = None) -> Dict[str, Any]:
+    async def create_company(self, name: str, description: Optional[str] = None, 
+                             industry: Optional[str] = None, welcome_message: Optional[str] = None) -> Dict[str, Any]:
         company_id = str(uuid.uuid4())
         company = {
             "id": company_id,
             "name": name,
             "description": description,
             "industry": industry,
+            "welcome_message": welcome_message,
             "created_at": datetime.now()
         }
         self.companies[company_id] = company
         logger.info(f"Created company: {name} (ID: {company_id})")
         return company
+    
+    async def update_company(self, company_id: str, description: Optional[str] = None, 
+                             industry: Optional[str] = None, welcome_message: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        company = self.companies.get(company_id)
+        if company:
+            if description is not None:
+                company["description"] = description
+            if industry is not None:
+                company["industry"] = industry
+            if welcome_message is not None:
+                company["welcome_message"] = welcome_message
+            logger.info(f"Updated company: {company['name']} (ID: {company_id})")
+            return company
+        return None
     
     async def get_company(self, company_id: str) -> Optional[Dict[str, Any]]:
         return self.companies.get(company_id)

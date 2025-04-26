@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import logging
 from typing import List, Optional, Dict, Any
+import asyncio  # Import asyncio
 
 from services.database import db
 from services.gemini_service import GeminiService
@@ -80,8 +81,15 @@ async def refresh_company_insights(company_id: str):
         if not company:
             raise HTTPException(status_code=404, detail="Company not found")
         
+        # In a real DB, you would clear existing insights here.
+        # For the in-memory DB, we'll simulate by just generating new ones,
+        # which will appear alongside old ones.
+        # Let's add a simple clear for the in-memory DB for demonstration.
+        db.insights = {k: v for k, v in db.insights.items() if v.get('company_id') != company_id}
+        logger.info(f"Cleared existing insights for {company['name']}.")
+        
         # Generate new insights
-        await generate_company_insights(company_id, force=True)
+        await generate_company_insights(company_id)
         
         # Get updated insights
         insights = await db.get_insights_by_company(company_id)
@@ -111,20 +119,36 @@ async def refresh_company_insights(company_id: str):
 
 async def generate_company_insights(company_id: str, force: bool = False):
     """
-    Generate insights for a company based on competitors and news.
+    Generate insights for a company based on competitors and news, fetching news concurrently if needed.
     """
     try:
         # Get company
         company = await db.get_company(company_id)
         if not company:
-            logger.error(f"Company not found: {company_id}")
+            logger.error(f"Company not found: {company_id} in background task")
             return
         
         # Get competitors
         competitors = await db.get_competitors_by_company(company_id)
         if not competitors:
-            logger.warning(f"No competitors found for company: {company['name']}")
+            logger.warning(f"No competitors found for company: {company['name']} to generate insights from.")
             return
+
+        # Identify which competitors need news fetching
+        competitors_to_fetch_news = []
+        for competitor in competitors:
+            news_articles = await db.get_news_by_competitor(competitor["id"])
+            if not news_articles:
+                competitors_to_fetch_news.append(competitor["id"])
+
+        # Fetch news concurrently for competitors that need it
+        if competitors_to_fetch_news:
+            logger.info(f"Fetching news concurrently for {len(competitors_to_fetch_news)} competitors for insight generation...")
+            fetch_tasks = [fetch_and_store_competitor_news(comp_id) for comp_id in competitors_to_fetch_news]
+            await asyncio.gather(*fetch_tasks)
+            logger.info("Concurrent news fetching for insights completed.")
+        else:
+            logger.info("All competitors already have news stored, skipping news fetch for insights.")
         
         # Prepare data for Gemini
         competitors_data = []
@@ -139,13 +163,8 @@ async def generate_company_insights(company_id: str, force: bool = False):
                 "weaknesses": competitor["weaknesses"]
             })
             
-            # Get news for this competitor
+            # Get all news for this competitor (whether new or old)
             news_articles = await db.get_news_by_competitor(competitor["id"])
-            
-            # If no news available, fetch it
-            if not news_articles:
-                await fetch_and_store_competitor_news(competitor["id"])
-                news_articles = await db.get_news_by_competitor(competitor["id"])
             
             # Add news to the data
             if news_articles:
@@ -158,29 +177,28 @@ async def generate_company_insights(company_id: str, force: bool = False):
                     } 
                     for article in news_articles
                 ]
+            else:
+                # Include competitor in news_data even if no news found
+                news_data[competitor["name"]] = []
         
         # Generate insights using Gemini
+        logger.info(f"Generating insights for company: {company['name']}")
         insights_response = await gemini_service.generate_insights(
             company["name"],
             {"competitors": competitors_data},
             news_data
         )
         
-        # Clear existing insights if forcing refresh
-        if force:
-            # In a real implementation, we would delete existing insights
-            # Since we're using an in-memory DB, we can't easily do this,
-            # so we'll just add new ones
-            pass
-        
         # Store insights
+        stored_insights_count = 0
         for insight in insights_response.get("insights", []):
             await db.create_insight(
                 company_id=company_id,
                 content=f"{insight.get('title', 'Insight')}: {insight.get('description', '')}"
             )
+            stored_insights_count += 1
             
-        logger.info(f"Generated {len(insights_response.get('insights', []))} insights for company: {company['name']}")
+        logger.info(f"Generated and stored {stored_insights_count} insights for company: {company['name']}")
             
     except Exception as e:
         logger.error(f"Error generating insights for company {company_id}: {e}") 

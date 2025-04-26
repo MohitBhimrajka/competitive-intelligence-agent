@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import uuid
 
 from services.database import db
@@ -17,12 +17,20 @@ gemini_service = GeminiService()
 class CompanyRequest(BaseModel):
     name: str
 
-class CompanyResponse(BaseModel):
+# New response model for the initial POST call
+class CompanyInitiateResponse(BaseModel):
+    id: str
+    name: str
+    status: str
+    message: str
+
+# Updated response model for GET /company/{company_id}
+class CompanyDetailsResponse(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
     industry: Optional[str] = None
-    welcome_message: str
+    welcome_message: Optional[str] = None
 
 class CompetitorResponse(BaseModel):
     id: str
@@ -37,74 +45,55 @@ class CompetitorsListResponse(BaseModel):
     company_name: str
     competitors: List[CompetitorResponse]
 
-@router.post("/", response_model=CompanyResponse)
+@router.post("/", response_model=CompanyInitiateResponse)
 async def analyze_company(company_request: CompanyRequest, background_tasks: BackgroundTasks):
     """
-    Analyze a company and kick off the competitive intelligence workflow.
+    Initiate analysis for a company. Returns ID immediately and starts background tasks.
     """
     try:
         # Check if we already have this company
         existing_company = await db.get_company_by_name(company_request.name)
         if existing_company:
-            # Get company information
-            company_info = {
-                "id": existing_company["id"],
-                "name": existing_company["name"],
-                "description": existing_company["description"],
-                "industry": existing_company["industry"],
-                "welcome_message": f"Welcome back! We're updating competitive intelligence for {existing_company['name']}."
-            }
-            
+            company_id = existing_company["id"]
+            message = f"Analysis already initiated for {existing_company['name']}. Refreshing data."
             # Trigger the background task to refresh data
-            background_tasks.add_task(refresh_company_data, existing_company["id"])
+            background_tasks.add_task(process_company_data, company_id)
             
-            return company_info
+            return CompanyInitiateResponse(id=company_id, name=existing_company["name"], status="processing", message=message)
         
-        # If company doesn't exist, analyze it with Gemini
-        company_analysis = await gemini_service.analyze_company(company_request.name)
+        # If company doesn't exist, create it with minimal info first
+        # The detailed analysis happens in the background task
+        new_company = await db.create_company(name=company_request.name)
+        company_id = new_company["id"]
+        message = f"Initiated analysis for {company_request.name}."
         
-        # Create new company in database
-        new_company = await db.create_company(
-            name=company_request.name,
-            description=company_analysis.get("description"),
-            industry=company_analysis.get("industry")
-        )
+        # Kick off the background task to get details, competitors, news, insights
+        background_tasks.add_task(process_company_data, company_id)
         
-        # Prepare response
-        response = {
-            "id": new_company["id"],
-            "name": new_company["name"],
-            "description": new_company["description"],
-            "industry": new_company["industry"],
-            "welcome_message": company_analysis.get("welcome_message", f"Welcome to your competitive intelligence dashboard for {company_request.name}!")
-        }
-        
-        # Kick off the background task to get competitors and news
-        background_tasks.add_task(process_company_data, new_company["id"])
-        
-        return response
+        return CompanyInitiateResponse(id=company_id, name=new_company["name"], status="processing", message=message)
         
     except Exception as e:
-        logger.error(f"Error in analyze_company: {e}")
+        logger.error(f"Error in analyze_company endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{company_id}", response_model=CompanyResponse)
+@router.get("/{company_id}", response_model=CompanyDetailsResponse)
 async def get_company_details(company_id: str):
     """
-    Get company details by ID.
+    Get company details (name, description, industry, welcome message) by ID.
     """
     try:
         company = await db.get_company(company_id)
         if not company:
             raise HTTPException(status_code=404, detail="Company not found")
         
-        return {
-            "id": company["id"],
-            "name": company["name"],
-            "description": company["description"],
-            "industry": company["industry"],
-            "welcome_message": f"Welcome back to your competitive intelligence dashboard for {company['name']}!"
-        }
+        # Return details including potentially generated welcome message
+        return CompanyDetailsResponse(
+            id=company["id"],
+            name=company["name"],
+            description=company.get("description"),
+            industry=company.get("industry"),
+            welcome_message=company.get("welcome_message")
+        )
         
     except HTTPException:
         raise
@@ -118,15 +107,12 @@ async def get_company_competitors(company_id: str):
     Get all competitors for a specific company.
     """
     try:
-        # Get company
         company = await db.get_company(company_id)
         if not company:
             raise HTTPException(status_code=404, detail="Company not found")
         
-        # Get competitors
         competitors = await db.get_competitors_by_company(company_id)
         
-        # Format response
         competitor_list = []
         for competitor in competitors:
             competitor_list.append({
@@ -152,49 +138,76 @@ async def get_company_competitors(company_id: str):
 
 async def process_company_data(company_id: str):
     """
-    Background task to process competitors and news for a company.
+    Background task to process company details, competitors, and news.
+    Then triggers insight generation.
     """
     try:
         from routers.insights import generate_company_insights
         
         company = await db.get_company(company_id)
         if not company:
-            logger.error(f"Company not found for ID: {company_id}")
+            logger.error(f"Company not found for ID: {company_id} in background task")
             return
         
-        # 1. Identify competitors
-        competitors_data = await gemini_service.identify_competitors(
-            company["name"],
-            company["description"] or "",
-            company["industry"] or ""
+        logger.info(f"Starting background data processing for {company['name']} (ID: {company_id})")
+        
+        # 1. Analyze company details (description, industry, welcome message)
+        logger.info(f"Analyzing details for {company['name']}...")
+        company_analysis = await gemini_service.analyze_company(company["name"])
+        await db.update_company(
+            company_id=company_id,
+            description=company_analysis.get("description"),
+            industry=company_analysis.get("industry"),
+            welcome_message=company_analysis.get("welcome_message")
         )
         
-        # 2. Store competitors in database
-        for competitor in competitors_data.get("competitors", []):
-            await db.create_competitor(
-                name=competitor["name"],
-                company_id=company_id,
-                description=competitor.get("description"),
-                strengths=competitor.get("strengths"),
-                weaknesses=competitor.get("weaknesses")
-            )
-            
-        # 3. Generate insights (handled by insights router)
-        await generate_company_insights(company_id)
+        # Re-fetch company object to ensure it has the updated details for competitor identification
+        company = await db.get_company(company_id)
+        if not company:
+            logger.error(f"Company disappeared after update: {company_id}")
+            return
+
+        # 2. Identify competitors
+        logger.info(f"Identifying competitors for {company['name']}...")
+        competitors_data = await gemini_service.identify_competitors(
+            company["name"],
+            company.get("description") or "",
+            company.get("industry") or ""
+        )
         
+        # 3. Store competitors in database
+        logger.info(f"Storing {len(competitors_data.get('competitors', []))} competitors...")
+        for competitor in competitors_data.get("competitors", []):
+            # Check if competitor already exists for this company before creating
+            existing_competitors = await db.get_competitors_by_company(company_id)
+            if not any(c['name'].lower() == competitor['name'].lower() for c in existing_competitors):
+                await db.create_competitor(
+                    name=competitor["name"],
+                    company_id=company_id,
+                    description=competitor.get("description"),
+                    strengths=competitor.get("strengths"),
+                    weaknesses=competitor.get("weaknesses")
+                )
+            else:
+                logger.info(f"Competitor {competitor['name']} already exists for {company['name']}, skipping creation.")
+
+        # 4. Generate insights (handled by insights router)
+        logger.info(f"Triggering insight generation for {company['name']}...")
+        await generate_company_insights(company_id)
+
         logger.info(f"Completed processing company data for {company['name']}")
-            
+
     except Exception as e:
-        logger.error(f"Error in process_company_data background task: {e}")
+        logger.error(f"Error in process_company_data background task for {company_id}: {e}")
 
 async def refresh_company_data(company_id: str):
     """
-    Background task to refresh company data.
+    Background task to refresh company data (details, competitors, news, insights).
+    Essentially re-runs the processing.
     """
     try:
-        # Just reuse the same process as for new companies
+        logger.info(f"Starting background data refresh for ID: {company_id}")
         await process_company_data(company_id)
         logger.info(f"Refreshed company data for ID: {company_id}")
-            
     except Exception as e:
-        logger.error(f"Error in refresh_company_data background task: {e}") 
+        logger.error(f"Error in refresh_company_data background task for {company_id}: {e}") 

@@ -63,39 +63,38 @@ class NewsService:
             to_date = datetime.now().strftime('%Y-%m-%d')
             
             prompt = f"""
-            I need you to search for recent business and industry news about the company "{competitor_name}" published between {from_date} and {to_date}.
-            
-            Focus on:
-            - Major business announcements, product launches, or strategy changes
-            - Financial performance, earnings reports, and stock movements
-            - Competitive positioning, market share changes, or industry trends affecting the company
-            - Partnerships, acquisitions, or executive changes
-            - Regulatory issues or legal challenges
-            
-            For each relevant article you find, provide:
-            - The exact title of the article
-            - The original source (publication name)
-            - The URL to the original article
-            - The publication date in ISO format (YYYY-MM-DDTHH:MM:SSZ)
-            - A 1-2 sentence summary of the key information
-            
-            Return EXACTLY 10 articles if possible, prioritizing recent and relevant business news.
-            Format the results as a JSON array with the following structure for each article:
-            
-            {
+            Using search tools, find recent business and industry news articles specifically about the company "{competitor_name}".
+            Focus on articles published between {from_date} and {to_date}.
+
+            Look for news covering topics like:
+            - Significant business announcements (product launches, strategy shifts)
+            - Financial updates (earnings, funding, stock)
+            - Major partnerships, mergers, or acquisitions
+            - Competitive actions or market positioning changes
+            - Leadership changes or company structure updates
+
+            For each relevant article found, provide the following information. Prioritize articles focused on business impact.
+            - "title": The exact title of the article.
+            - "source": The name of the publication.
+            - "url": The direct link to the article.
+            - "publishedAt": The publication date and time in ISO 8601 format (YYYY-MM-DDTHH:MM:SSZ), if available. If not, provide the date in YYYY-MM-DD format.
+            - "content": A summary or excerpt from the article (a few sentences) that captures the main point. Note: Providing the full article content via this method may not be possible, so a good summary is expected.
+
+            Return up to 10 of the most relevant articles found. If fewer than 10 relevant articles exist, return all that were found. If no relevant articles are found, return an empty array.
+
+            Output ONLY the JSON object with the following exact structure:
+            {{
                 "articles": [
-                    {
-                        "title": "Full article title",
-                        "source": "Publication name",
-                        "url": "https://full-url-to-article",
-                        "publishedAt": "2025-04-25T15:30:00Z",
-                        "content": "Brief summary of key information from the article (1-2 sentences max)"
-                    },
-                    ...
+                    {{
+                        "title": "...",
+                        "source": "...",
+                        "url": "...",
+                        "publishedAt": "...",
+                        "content": "..."
+                    }},
+                    ... (up to 10 articles)
                 ]
-            }
-            
-            If you find fewer than 10 relevant articles, return as many as you can find. If you find no relevant articles, return an empty array.
+            }}
             """
             
             contents = [

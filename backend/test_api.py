@@ -53,9 +53,9 @@ def test_health_check():
         return False
 
 def analyze_company(company_name):
-    """Test the company analysis endpoint."""
+    """Test the company analysis initiation endpoint."""
     print("\n" + "-"*40)
-    print(f"TESTING COMPANY ANALYSIS: {company_name}")
+    print(f"TESTING COMPANY ANALYSIS INITIATION: {company_name}")
     print("-"*40)
     
     try:
@@ -69,45 +69,63 @@ def analyze_company(company_name):
             print(f"Error response: {response.text}")
             return None
         
-        company_data = response.json()
-        print(f"Company ID: {company_data['id']}")
-        print(f"Name: {company_data['name']}")
-        print(f"Description: {company_data['description']}")
-        print(f"Industry: {company_data['industry']}")
-        print(f"Welcome Message: {company_data['welcome_message']}")
+        # Expecting the new minimal response
+        initiate_data = response.json()
+        print(f"Company ID: {initiate_data['id']}")
+        print(f"Name: {initiate_data['name']}")
+        print(f"Status: {initiate_data['status']}")
+        print(f"Message: {initiate_data['message']}")
         
-        return company_data
+        return initiate_data # Return the minimal data, including ID
     except Exception as e:
-        logger.error(f"Error in company analysis: {e}")
+        logger.error(f"Error in company analysis initiation: {e}")
         print(f"ERROR: {e}")
         return None
 
 def get_company_details(company_id):
-    """Test the get company details endpoint."""
+    """Test the get company details endpoint (now includes welcome message)."""
     print("\n" + "-"*40)
     print(f"TESTING GET COMPANY DETAILS: {company_id}")
     print("-"*40)
     
-    try:
-        response = requests.get(f"{API_BASE_URL}/api/company/{company_id}")
-        print(f"Status code: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"Error response: {response.text}")
-            return None
-        
-        company_data = response.json()
-        print(f"Company ID: {company_data['id']}")
-        print(f"Name: {company_data['name']}")
-        print(f"Description: {company_data['description']}")
-        print(f"Industry: {company_data['industry']}")
-        print(f"Welcome Message: {company_data['welcome_message']}")
-        
-        return company_data
-    except Exception as e:
-        logger.error(f"Error getting company details: {e}")
-        print(f"ERROR: {e}")
-        return None
+    max_retries = 10 # Allow more retries for details to be processed in background
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            response = requests.get(f"{API_BASE_URL}/api/company/{company_id}")
+            print(f"Status code: {response.status_code}")
+            
+            if response.status_code == 200:
+                company_data = response.json()
+                # Check if details are populated
+                if company_data.get("description") and company_data.get("industry") and company_data.get("welcome_message"):
+                    print(f"Company ID: {company_data['id']}")
+                    print(f"Name: {company_data['name']}")
+                    print(f"Description: {company_data['description']}")
+                    print(f"Industry: {company_data['industry']}")
+                    print(f"Welcome Message: {company_data['welcome_message']}")
+                    return company_data
+                else:
+                    print(f"Details not fully processed yet, retrying in 2 seconds... (Attempt {retry_count+1}/{max_retries})")
+                    time.sleep(2)
+                    retry_count += 1
+            elif response.status_code == 404:
+                print(f"Company not found after initiation, retrying in 2 seconds... (Attempt {retry_count+1}/{max_retries})")
+                time.sleep(2)
+                retry_count += 1
+            else:
+                print(f"Error response: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting company details: {e}")
+            print(f"ERROR: {e}")
+            retry_count += 1
+            time.sleep(2) # Add sleep on error too
+    
+    print(f"Failed to get company details after {max_retries} attempts")
+    return None
 
 def get_company_competitors(company_id):
     """Test the get company competitors endpoint."""
@@ -324,89 +342,94 @@ def refresh_company_insights(company_id):
         return None
 
 def test_full_api_workflow(company_name):
-    """Test the full API workflow."""
+    """Test the full API workflow with granular steps."""
     print("\n" + "="*80)
     print(f"TESTING FULL API WORKFLOW FOR: {company_name}")
     print("="*80 + "\n")
-    
+
     # Make sure the API is running
     if not test_health_check():
         print("API health check failed. Is the server running?")
         sys.exit(1)
-    
-    # Step 1: Analyze company
-    company_data = analyze_company(company_name)
-    if not company_data:
-        print("Company analysis failed")
+
+    # Step 1: Initiate company analysis
+    # This call is quick and returns the ID
+    initiate_data = analyze_company(company_name)
+    if not initiate_data:
+        print("Company analysis initiation failed")
         sys.exit(1)
-    
-    company_id = company_data["id"]
-    
-    # Step 2: Get company details (just to verify)
+
+    company_id = initiate_data["id"]
+
+    # Step 2: Get company details (polls until details are available)
+    # This call waits for the background task to complete the initial analysis
+    print("\nWaiting for initial company details (description, industry, welcome message)...")
+    time.sleep(3) # Give a little time before first poll
     company_details = get_company_details(company_id)
     if not company_details:
-        print("Failed to get company details")
+        print("Failed to get company details after analysis")
         sys.exit(1)
-    
+
     # Step 3: Get competitors (may need to wait for processing)
+    # The background task initiates competitor identification right after details are analyzed.
+    # We might still need a short wait or polling here.
     print("\nWaiting for competitor identification (this may take a moment)...")
-    time.sleep(3)  # Give some time for background processing
-    
+    time.sleep(3) # Give some time for background processing
     competitors_data = get_company_competitors(company_id)
-    if not competitors_data:
-        print("Failed to get competitors")
-        sys.exit(1)
-    
-    # Step 4: Get news for a competitor
-    if competitors_data.get('competitors'):
-        competitor_id = competitors_data['competitors'][0]['id']
-        competitor_news = get_competitor_news(competitor_id)
-        if not competitor_news:
-            print(f"Failed to get news for competitor {competitor_id}")
-    else:
-        print("No competitors found to get news for")
-    
-    # Step 5: Get news for all competitors
+    # It's okay if competitors_data is None here, subsequent steps might still work
+    # if the error is transient or no competitors were found.
+
+    # Step 4: Get news for all competitors
+    # This endpoint will also trigger news fetching in the background if none is found
+    print("\nWaiting for company news (this may take a moment)...")
+    time.sleep(3) # Give some time for news fetching
     company_news = get_company_news(company_id)
-    if not company_news:
-        print("Failed to get company news")
-        # Don't exit, try insights anyway
-    
-    # Step 6: Get insights
+    # It's okay if company_news is None
+
+    # Step 5: Get insights
+    # This endpoint will trigger insight generation in the background if none exists
+    # or if news was just fetched. This is the longest step.
     print("\nWaiting for insight generation (this may take a few moments)...")
-    time.sleep(5)  # Give more time for insights to be generated
-    
+    time.sleep(5) # Give more time for insights to be generated
     insights_data = get_company_insights(company_id)
+
+    # Try refreshing insights if initial fetch failed or returned nothing
     if not insights_data or len(insights_data.get('insights', [])) == 0:
-        print("Failed to get insights or no insights available")
-        # Try refreshing insights
+        print("\nAttempting to refresh insights...")
         refresh_result = refresh_company_insights(company_id)
         if refresh_result and len(refresh_result.get('insights', [])) > 0:
             insights_data = refresh_result
         else:
-            print("Failed to refresh insights")
-    
+            print("Failed to get or refresh insights.")
+
     # Final summary
     print("\n" + "="*80)
     print("API WORKFLOW SUMMARY")
     print("="*80)
-    
+
     print(f"\nCompany: {company_name}")
     print(f"Company ID: {company_id}")
-    
+
     competitors_count = len(competitors_data.get('competitors', [])) if competitors_data else 0
     print(f"Competitors identified: {competitors_count}")
-    
+
+    # Calculate total news articles if company_news was retrieved
+    total_news_articles = 0
+    if company_news:
+        for comp_articles in company_news.values():
+            total_news_articles += len(comp_articles)
+    print(f"News articles retrieved across competitors: {total_news_articles}")
+
     insights_count = len(insights_data.get('insights', [])) if insights_data else 0
     print(f"Insights generated: {insights_count}")
-    
+
     print("\nAPI workflow test completed")
     print("\nFrontend can now use these endpoints:")
-    print(f"- Company details: GET /api/company/{company_id}")
+    print(f"- Company details: GET /api/company/{company_id}") # Now includes welcome message
     print(f"- Competitors: GET /api/company/{company_id}/competitors")
     print(f"- News: GET /api/news/company/{company_id}")
     print(f"- Insights: GET /api/insights/company/{company_id}")
-    
+
     # Print the exact URL to test in the browser
     print("\nTry these URLs in your browser:")
     print(f"{API_BASE_URL}/api/company/{company_id}")

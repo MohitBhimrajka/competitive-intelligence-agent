@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import logging
 from typing import List, Optional, Dict
+import asyncio  # Import asyncio
 
 from services.database import db
 from services.news_service import NewsService
@@ -73,7 +74,7 @@ async def get_competitor_news(competitor_id: str):
 @router.get("/company/{company_id}", response_model=Dict[str, List[NewsArticleBase]])
 async def get_company_competitors_news(company_id: str):
     """
-    Get news for all competitors of a company.
+    Get news for all competitors of a company, fetching concurrently if needed.
     """
     try:
         # Get company
@@ -84,21 +85,23 @@ async def get_company_competitors_news(company_id: str):
         # Get all competitors for this company
         competitors = await db.get_competitors_by_company(company_id)
         if not competitors:
+            logger.info(f"No competitors found for company: {company['name']} to fetch news for.")
             return {}
-        
-        # Get news for each competitor
+
+        # Prepare tasks for fetching and storing news concurrently for all competitors
+        fetch_tasks = [fetch_and_store_competitor_news(comp["id"]) for comp in competitors]
+
+        # Run tasks concurrently
+        logger.info(f"Fetching news concurrently for {len(competitors)} competitors of {company['name']}...")
+        await asyncio.gather(*fetch_tasks)
+        logger.info("Concurrent news fetching completed.")
+
+        # After fetching/storing, retrieve all news from the database
         result = {}
         for competitor in competitors:
             competitor_id = competitor["id"]
-            
-            # Get stored news
             news_articles = await db.get_news_by_competitor(competitor_id)
-            
-            # If no news stored, fetch new ones
-            if not news_articles:
-                await fetch_and_store_competitor_news(competitor_id)
-                news_articles = await db.get_news_by_competitor(competitor_id)
-            
+
             # Format articles
             articles = []
             for article in news_articles:
@@ -109,7 +112,7 @@ async def get_company_competitors_news(company_id: str):
                     "published_at": article["published_at"],
                     "content": article["content"]
                 })
-                
+
             result[competitor["name"]] = articles
             
         return result
@@ -122,19 +125,30 @@ async def get_company_competitors_news(company_id: str):
 
 async def fetch_and_store_competitor_news(competitor_id: str):
     """
-    Fetch and store news for a competitor.
+    Fetch and store news for a competitor if not already present.
     """
     try:
+        # Check if news already exists for this competitor
+        existing_news = await db.get_news_by_competitor(competitor_id)
+        if existing_news:
+            logger.info(f"News already exists for competitor {competitor_id}, skipping fetch.")
+            return # News already exists, no need to fetch
+
         competitor = await db.get_competitor(competitor_id)
         if not competitor:
-            logger.error(f"Competitor not found: {competitor_id}")
+            logger.error(f"Competitor not found: {competitor_id} during news fetch.")
             return
-        
-        # Fetch news from the NewsAPI
+
+        logger.info(f"Fetching news for competitor: {competitor['name']} (ID: {competitor_id})")
+
+        # Fetch news from the NewsAPI and Gemini
         articles = await news_service.get_competitor_news(competitor["name"])
-        
+
         # Store articles in the database
+        stored_count = 0
         for article in articles:
+            # Optional: Add a check here to prevent storing duplicates by URL if needed
+            # For simplicity with the in-memory DB, we'll just create them.
             await db.create_news_article(
                 competitor_id=competitor_id,
                 title=article["title"],
@@ -143,8 +157,9 @@ async def fetch_and_store_competitor_news(competitor_id: str):
                 content=article["content"],
                 published_at=article["published_at"]
             )
-            
-        logger.info(f"Stored {len(articles)} news articles for competitor: {competitor['name']}")
-            
+            stored_count += 1
+
+        logger.info(f"Stored {stored_count} news articles for competitor: {competitor['name']}")
+
     except Exception as e:
-        logger.error(f"Error fetching news for competitor {competitor_id}: {e}") 
+        logger.error(f"Error fetching or storing news for competitor {competitor_id}: {e}") 

@@ -36,6 +36,7 @@ logger = logging.getLogger('test_workflow')
 from services.gemini_service import GeminiService
 from services.news_service import NewsService
 from services.database import db
+from routers.news import fetch_and_store_competitor_news  # Import the function to parallelize
 
 async def test_full_workflow(company_name: str):
     """Test the full workflow with a given company name."""
@@ -65,7 +66,8 @@ async def test_full_workflow(company_name: str):
         company = await db.create_company(
             name=company_name,
             description=company_analysis.get("description"),
-            industry=company_analysis.get("industry")
+            industry=company_analysis.get("industry"),
+            welcome_message=company_analysis.get("welcome_message")  # Store welcome_message
         )
         print(f"\nCompany created in database with ID: {company['id']}")
         
@@ -91,6 +93,7 @@ async def test_full_workflow(company_name: str):
         
         # Store competitors in database
         competitor_ids = {}
+        competitor_list_for_insights = []  # Prepare structure for insights step
         for idx, competitor in enumerate(competitors_data.get("competitors", []), 1):
             print(f"\n{idx}. {competitor['name']}")
             print(f"   Description: {competitor.get('description', 'N/A')}")
@@ -110,45 +113,59 @@ async def test_full_workflow(company_name: str):
                 weaknesses=competitor.get("weaknesses")
             )
             competitor_ids[competitor["name"]] = db_competitor["id"]
+            competitor_list_for_insights.append(db_competitor)  # Add full db object
             
     except Exception as e:
         logger.error(f"Error in competitor identification: {e}")
         print(f"ERROR: {e}")
         sys.exit(1)
 
-    # STEP 3: News Gathering
+    # STEP 3: News Gathering (PARALLELIZED)
     print("\n" + "-"*40)
-    print("STEP 3: NEWS GATHERING")
+    print("STEP 3: NEWS GATHERING (PARALLELIZED)")
     print("-"*40)
     
-    all_news = {}
     try:
+        news_fetch_tasks = []
+        competitor_names_to_fetch = []
+        
         for competitor_name, competitor_id in competitor_ids.items():
-            print(f"\nFetching news for {competitor_name}...")
-            news_articles = await news_service.get_competitor_news(competitor_name, days_back=30)
+            # Prepare a task to fetch and store news for this competitor
+            news_fetch_tasks.append(fetch_and_store_competitor_news(competitor_id))
+            competitor_names_to_fetch.append(competitor_name)
+        
+        if news_fetch_tasks:
+            print(f"Fetching news concurrently for {len(news_fetch_tasks)} competitors...")
+            # Run the tasks concurrently and wait for them to complete
+            await asyncio.gather(*news_fetch_tasks)
+            print("Concurrent news fetching completed.")
             
-            print(f"Found {len(news_articles)} articles for {competitor_name}")
+            # After fetching, retrieve all news from the DB to display
+            all_news_for_insights = {}
+            total_news_count = 0
+            print("\nGathering fetched news:")
             
-            # Store a sample of articles
-            all_news[competitor_name] = []
-            for i, article in enumerate(news_articles[:3], 1):  # Only show top 3 articles
-                print(f"\n{i}. {article['title']}")
-                print(f"   Source: {article['source']}")
-                print(f"   URL: {article['url']}")
-                print(f"   Date: {article['published_at']}")
-                print(f"   Summary: {article['content'][:150]}...")
+            for comp_name, comp_id in competitor_ids.items():
+                news_articles = await db.get_news_by_competitor(comp_id)
+                all_news_for_insights[comp_name] = news_articles  # Store raw articles for insights
+                total_news_count += len(news_articles)
                 
-                # Store article in database
-                db_article = await db.create_news_article(
-                    competitor_id=competitor_id,
-                    title=article["title"],
-                    source=article["source"],
-                    url=article["url"],
-                    content=article["content"],
-                    published_at=article["published_at"]
-                )
-                
-                all_news[competitor_name].append(article)
+                print(f"\nFound {len(news_articles)} articles for {comp_name}")
+                # Print a sample of articles (top 3)
+                for i, article in enumerate(news_articles[:3], 1):
+                    print(f"\n{i}. {article['title']}")
+                    print(f"   Source: {article['source']}")
+                    print(f"   URL: {article['url']}")
+                    # Assuming published_at is string/iso format from DB/fetch
+                    print(f"   Date: {article.get('published_at', 'N/A')}")
+                    # Show a summary/preview
+                    content_preview = article.get('content', 'No content').strip()
+                    summary_preview = content_preview[:150] + "..." if len(content_preview) > 150 else content_preview
+                    print(f"   Summary: {summary_preview}")
+                    
+            print(f"\nTotal news articles gathered across competitors: {total_news_count}")
+        else:
+            print("No competitors found to fetch news for.")
                 
     except Exception as e:
         logger.error(f"Error in news gathering: {e}")
@@ -161,28 +178,44 @@ async def test_full_workflow(company_name: str):
     print("-"*40)
     
     try:
-        print(f"Generating insights for {company_name} based on competitor news...")
+        print(f"Generating insights for {company_name} based on competitor data and news...")
         
-        # Prepare competitor data for insight generation
-        competitor_list = []
+        # Prepare competitor data structure matching what generate_insights expects
+        competitors_for_gemini = []
+        for competitor in competitor_list_for_insights:
+            competitors_for_gemini.append({
+                "name": competitor["name"],
+                "description": competitor["description"],
+                "strengths": competitor["strengths"],
+                "weaknesses": competitor["weaknesses"]
+            })
+        
+        # Fetch news data from the database - the news is already stored in step 3
+        news_data = {}
         for competitor_name, competitor_id in competitor_ids.items():
-            competitor = await db.get_competitor(competitor_id)
-            if competitor:
-                competitor_list.append({
-                    "name": competitor["name"],
-                    "description": competitor["description"],
-                    "strengths": competitor["strengths"],
-                    "weaknesses": competitor["weaknesses"]
-                })
+            news_articles = await db.get_news_by_competitor(competitor_id)
+            if news_articles:
+                news_data[competitor_name] = [
+                    {
+                        "title": article["title"],
+                        "content": article["content"],
+                        "source": article["source"],
+                        "url": article["url"]
+                    }
+                    for article in news_articles
+                ]
+            else:
+                news_data[competitor_name] = []
         
         insights_response = await gemini_service.generate_insights(
             company["name"],
-            {"competitors": competitor_list},
-            all_news
+            {"competitors": competitors_for_gemini},
+            news_data
         )
         
         print(f"\nGenerated {len(insights_response.get('insights', []))} insights:")
         
+        # Store insights in database
         for i, insight in enumerate(insights_response.get("insights", []), 1):
             print(f"\n{i}. {insight.get('title', 'Untitled Insight')}")
             print(f"   Type: {insight.get('type', 'N/A')}")
@@ -198,7 +231,7 @@ async def test_full_workflow(company_name: str):
     except Exception as e:
         logger.error(f"Error in insight generation: {e}")
         print(f"ERROR: {e}")
-        sys.exit(1)
+        # Don't sys.exit here, still show the summary
 
     # Workflow Summary
     print("\n" + "="*80)
@@ -206,13 +239,17 @@ async def test_full_workflow(company_name: str):
     print("="*80)
     
     print(f"\nCompany: {company['name']}")
-    print(f"Industry: {company['industry']}")
+    print(f"Industry: {company.get('industry', 'N/A')}")
     print(f"Competitors identified: {len(competitor_ids)}")
     
-    total_news = sum(len(articles) for articles in all_news.values())
+    # Calculate total news count from DB
+    total_news = 0
+    for comp_id in competitor_ids.values():
+        total_news += len(await db.get_news_by_competitor(comp_id))
     print(f"News articles gathered: {total_news}")
     
-    insights_count = len(insights_response.get('insights', []))
+    # Calculate total insights
+    insights_count = len(await db.get_insights_by_company(company["id"]))
     print(f"Insights generated: {insights_count}")
     
     print("\nWorkflow completed successfully!")
@@ -223,7 +260,6 @@ async def test_full_workflow(company_name: str):
     print(f"- News: GET /api/news/company/{company['id']}")
     print(f"- Insights: GET /api/insights/company/{company['id']}")
 
-
 async def main():
     """Main entry point for the script."""
     # Check for API keys
@@ -231,11 +267,11 @@ async def main():
         print("ERROR: GOOGLE_API_KEY environment variable not set.")
         print("Please create a .env file with your API keys.")
         sys.exit(1)
-        
+    
     if not os.getenv("NEWS_API_KEY"):
-        print("ERROR: NEWS_API_KEY environment variable not set.")
-        print("Please create a .env file with your API keys.")
-        sys.exit(1)
+        print("WARNING: NEWS_API_KEY environment variable not set.")
+        print("News fetching will rely solely on Gemini's search capability.")
+        # Don't exit, just warn
     
     # Get company name from command line argument or use default
     if len(sys.argv) > 1:
@@ -244,7 +280,6 @@ async def main():
         company_name = input("Enter a company name to analyze: ")
     
     await test_full_workflow(company_name)
-
 
 if __name__ == "__main__":
     asyncio.run(main()) 

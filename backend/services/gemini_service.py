@@ -43,13 +43,12 @@ class GeminiService:
     async def analyze_company(self, company_name: str):
         """Analyze what the company does and generate a friendly message."""
         prompt = f"""
-        Analyze the company named {company_name}. 
+        Analyze the company named {company_name}.
         Provide the following information in JSON format:
-        1. A brief description of what the company does
-        2. The industry it operates in
-        3. A friendly welcome message for a user from this company
-        
-        Output in this exact JSON structure:
+        1. A concise yet informative description (2-3 sentences) of what the company does, including its primary products/services and target audience.
+        2. The main industry or sector it operates within.
+        3. A friendly, professional, and slightly enthusiastic welcome message (1-2 sentences) tailored for a user from this specific company who is about to use a competitive intelligence platform. **Optionally, integrate a simple, non-offensive, lighthearted pun related to the company's name or main industry or their primary function into this welcome message.**
+        Output ONLY the JSON object with the following exact structure:
         {{
             "description": "...",
             "industry": "...",
@@ -99,26 +98,28 @@ class GeminiService:
     async def identify_competitors(self, company_name: str, company_description: str, industry: str):
         """Identify competitors for the given company."""
         prompt = f"""
-        Based on the following information about {company_name}:
+        Based on the following information about the company {company_name}:
         - Description: {company_description}
         - Industry: {industry}
-        
-        Identify the top 5 competitors for this company. For each competitor, provide:
-        1. Company name
-        2. Brief description of what they do
-        3. Key strengths (bullet points)
-        4. Key weaknesses (bullet points)
-        
-        Output in this exact JSON structure:
+
+        Identify the top 5 *most relevant direct competitors* for this company.
+        For each competitor, provide:
+        1. The company name.
+        2. A brief description (1-2 sentences) of their main focus.
+        3. 2-3 key strengths *relative to the target company or market* (as bullet points).
+        4. 2-3 key weaknesses *relative to the target company or market* (as bullet points).
+        Prioritize competitors who are actively making moves in the market or directly compete with {company_name}'s core offerings.
+
+        Output ONLY the JSON object with this exact structure:
         {{
             "competitors": [
                 {{
                     "name": "Competitor 1",
-                    "description": "What they do",
-                    "strengths": ["strength1", "strength2"],
-                    "weaknesses": ["weakness1", "weakness2"]
+                    "description": "...",
+                    "strengths": ["...", "..."],
+                    "weaknesses": ["...", "..."]
                 }},
-                ...
+                ... (up to 5 competitors)
             ]
         }}
         """
@@ -169,27 +170,34 @@ class GeminiService:
                 news_context += f"CONTENT: {article['content']}\n\n"
         
         prompt = f"""
-        Based on the news about competitors of {company_name}, generate strategic insights.
-        
+        As a competitive intelligence analyst, synthesize the provided information about {company_name}, its competitors, and recent news to generate 5-10 strategic insights.
+        These insights should highlight competitive opportunities, threats, or significant market trends relevant to {company_name}.
+
         COMPANY: {company_name}
-        
+
         COMPETITORS INFORMATION:
         {json.dumps(competitors_data, indent=2)}
-        
+
         NEWS DATA:
         {news_context}
-        
-        Generate 5-10 strategic insights for {company_name} based on this competitive intelligence.
-        Each insight should identify a competitive opportunity, threat, or market trend.
-        
-        Output in this exact JSON structure:
+
+        Instructions:
+        - Generate 5 to 10 distinct insights.
+        - Each insight must be directly supported by the provided Competitor Information and/or News Data.
+        - For each insight, provide:
+            - A concise 'title'.
+            - A 'description' that explains the insight and its potential implication for {company_name}. Reference the relevant information from the context (e.g., "Competitor X's recent acquisition...", "News about Trend Y...").
+            - A 'type' labeled as either "opportunity", "threat", or "trend".
+            - A list of 'related_competitors' (names from the provided list) that are most relevant to this insight.
+        - If news data is limited, focus insights primarily on the provided competitor strengths/weaknesses and general industry trends.
+        - Output ONLY the JSON object with the following exact structure:
         {{
             "insights": [
                 {{
-                    "title": "Brief title",
-                    "description": "Detailed insight explanation",
+                    "title": "...",
+                    "description": "...",
                     "type": "opportunity|threat|trend",
-                    "related_competitors": ["competitor1", "competitor2"]
+                    "related_competitors": ["...", "..."]
                 }},
                 ...
             ]

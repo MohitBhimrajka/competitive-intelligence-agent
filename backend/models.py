@@ -12,6 +12,7 @@ class Company(CompanyBase):
     id: str
     description: Optional[str] = None
     industry: Optional[str] = None
+    welcome_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
     class Config:
