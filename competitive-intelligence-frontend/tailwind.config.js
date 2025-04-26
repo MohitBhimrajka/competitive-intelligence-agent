@@ -1,0 +1,91 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{tsx,ts}"],
+  theme: {
+    extend: {
+      backdropBlur: {
+        xs: "2px",
+        sm: "4px"
+      },
+      fontFamily: {
+        sans: ["Inter", "sans-serif"]
+      },
+      colors: {
+        gray: {
+          50: 'var(--chakra-colors-gray-50)',
+          100: 'var(--chakra-colors-gray-100)',
+          200: 'var(--chakra-colors-gray-200)',
+          300: 'var(--chakra-colors-gray-300)',
+          400: 'var(--chakra-colors-gray-400)',
+          500: 'var(--chakra-colors-gray-500)',
+          600: 'var(--chakra-colors-gray-600)',
+          700: 'var(--chakra-colors-gray-700)',
+          800: 'var(--chakra-colors-gray-800)',
+          900: 'var(--chakra-colors-gray-900)',
+        },
+        blue: {
+          50: 'var(--chakra-colors-blue-50)',
+          100: 'var(--chakra-colors-blue-100)',
+          200: 'var(--chakra-colors-blue-200)',
+          300: 'var(--chakra-colors-blue-300)',
+          400: 'var(--chakra-colors-blue-400)',
+          500: 'var(--chakra-colors-blue-500)',
+          600: 'var(--chakra-colors-blue-600)',
+          700: 'var(--chakra-colors-blue-700)',
+          800: 'var(--chakra-colors-blue-800)',
+          900: 'var(--chakra-colors-blue-900)',
+        },
+        red: {
+          50: 'var(--chakra-colors-red-50)',
+          100: 'var(--chakra-colors-red-100)',
+          200: 'var(--chakra-colors-red-200)',
+          300: 'var(--chakra-colors-red-300)',
+          400: 'var(--chakra-colors-red-400)',
+          500: 'var(--chakra-colors-red-500)',
+          600: 'var(--chakra-colors-red-600)',
+          700: 'var(--chakra-colors-red-700)',
+          800: 'var(--chakra-colors-red-800)',
+          900: 'var(--chakra-colors-red-900)',
+        },
+        green: {
+          50: 'var(--chakra-colors-green-50)',
+          100: 'var(--chakra-colors-green-100)',
+          200: 'var(--chakra-colors-green-200)',
+          300: 'var(--chakra-colors-green-300)',
+          400: 'var(--chakra-colors-green-400)',
+          500: 'var(--chakra-colors-green-500)',
+          600: 'var(--chakra-colors-green-600)',
+          700: 'var(--chakra-colors-green-700)',
+          800: 'var(--chakra-colors-green-800)',
+          900: 'var(--chakra-colors-green-900)',
+        },
+        yellow: {
+          50: 'var(--chakra-colors-yellow-50)',
+          100: 'var(--chakra-colors-yellow-100)',
+          200: 'var(--chakra-colors-yellow-200)',
+          300: 'var(--chakra-colors-yellow-300)',
+          400: 'var(--chakra-colors-yellow-400)',
+          500: 'var(--chakra-colors-yellow-500)',
+          600: 'var(--chakra-colors-yellow-600)',
+          700: 'var(--chakra-colors-yellow-700)',
+          800: 'var(--chakra-colors-yellow-800)',
+          900: 'var(--chakra-colors-yellow-900)',
+        },
+        purple: {
+          50: 'var(--chakra-colors-purple-50)',
+          100: 'var(--chakra-colors-purple-100)',
+          200: 'var(--chakra-colors-purple-200)',
+          300: 'var(--chakra-colors-purple-300)',
+          400: 'var(--chakra-colors-purple-400)',
+          500: 'var(--chakra-colors-purple-500)',
+          600: 'var(--chakra-colors-purple-600)',
+          700: 'var(--chakra-colors-purple-700)',
+          800: 'var(--chakra-colors-purple-800)',
+          900: 'var(--chakra-colors-purple-900)',
+        },
+      },
+    },
+  },
+  plugins: [require("@tailwindcss/forms")],
+}
+
