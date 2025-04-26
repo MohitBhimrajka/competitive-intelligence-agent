@@ -364,7 +364,7 @@ def test_full_api_workflow(company_name):
     # Step 2: Get company details (polls until details are available)
     # This call waits for the background task to complete the initial analysis
     print("\nWaiting for initial company details (description, industry, welcome message)...")
-    time.sleep(3) # Give a little time before first poll
+    time.sleep(5) # Give more time before first poll to reduce likelihood of needing retries
     company_details = get_company_details(company_id)
     if not company_details:
         print("Failed to get company details after analysis")
@@ -461,4 +461,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

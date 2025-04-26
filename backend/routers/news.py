@@ -16,7 +16,7 @@ news_service = NewsService()
 class NewsArticleBase(BaseModel):
     title: str
     source: str
-    url: str
+    url: Optional[str] = None
     published_at: str
     content: str
 
@@ -54,8 +54,8 @@ async def get_competitor_news(competitor_id: str):
             articles.append({
                 "title": article["title"],
                 "source": article["source"],
-                "url": article["url"],
-                "published_at": article["published_at"],
+                "url": article.get("url"),
+                "published_at": article.get("published_at", ""),
                 "content": article["content"]
             })
             
@@ -108,8 +108,8 @@ async def get_company_competitors_news(company_id: str):
                 articles.append({
                     "title": article["title"],
                     "source": article["source"],
-                    "url": article["url"],
-                    "published_at": article["published_at"],
+                    "url": article.get("url"),
+                    "published_at": article.get("published_at", ""),
                     "content": article["content"]
                 })
 
@@ -121,6 +121,10 @@ async def get_company_competitors_news(company_id: str):
         raise
     except Exception as e:
         logger.error(f"Error in get_company_competitors_news: {e}")
+        # Log the validation error details if possible
+        from fastapi.exceptions import ResponseValidationError
+        if isinstance(e, ResponseValidationError):
+            logger.error(f"Response validation error details: {e.errors()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 async def fetch_and_store_competitor_news(competitor_id: str):
@@ -139,27 +143,26 @@ async def fetch_and_store_competitor_news(competitor_id: str):
             logger.error(f"Competitor not found: {competitor_id} during news fetch.")
             return
 
-        logger.info(f"Fetching news for competitor: {competitor['name']} (ID: {competitor_id})")
+        logger.info(f"Fetching news/developments for competitor: {competitor['name']} (ID: {competitor_id})")
 
-        # Fetch news from the NewsAPI and Gemini
-        articles = await news_service.get_competitor_news(competitor["name"])
+        # Fetch news from the NewsAPI and developments from Gemini
+        # get_competitor_news now returns a mix, let's rename the variable
+        items = await news_service.get_competitor_news(competitor["name"])
 
-        # Store articles in the database
+        # Store items in the database
         stored_count = 0
-        for article in articles:
-            # Optional: Add a check here to prevent storing duplicates by URL if needed
-            # For simplicity with the in-memory DB, we'll just create them.
+        for item in items:
             await db.create_news_article(
                 competitor_id=competitor_id,
-                title=article["title"],
-                source=article["source"],
-                url=article["url"],
-                content=article["content"],
-                published_at=article["published_at"]
+                title=item["title"],
+                source=item["source"],
+                url=item.get("url"),
+                content=item["content"],
+                published_at=item.get("published_at", "")
             )
             stored_count += 1
 
-        logger.info(f"Stored {stored_count} news articles for competitor: {competitor['name']}")
+        logger.info(f"Stored {stored_count} news/development items for competitor: {competitor['name']}")
 
     except Exception as e:
         logger.error(f"Error fetching or storing news for competitor {competitor_id}: {e}") 

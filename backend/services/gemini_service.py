@@ -102,7 +102,7 @@ class GeminiService:
         - Description: {company_description}
         - Industry: {industry}
 
-        Identify the top 5 *most relevant direct competitors* for this company.
+        Identify **up to 10** *most relevant direct competitors* for this company.
         For each competitor, provide:
         1. The company name.
         2. A brief description (1-2 sentences) of their main focus.
@@ -110,7 +110,8 @@ class GeminiService:
         4. 2-3 key weaknesses *relative to the target company or market* (as bullet points).
         Prioritize competitors who are actively making moves in the market or directly compete with {company_name}'s core offerings.
 
-        Output ONLY the JSON object with this exact structure:
+        Output ONLY the JSON object with this exact structure.
+        **Ensure the final output is a single, valid JSON object with correct syntax, including commas between all elements in lists and between key-value pairs within objects.**
         {{
             "competitors": [
                 {{
@@ -119,7 +120,7 @@ class GeminiService:
                     "strengths": ["...", "..."],
                     "weaknesses": ["...", "..."]
                 }},
-                ... (up to 5 competitors)
+                ... (up to 10 competitors)
             ]
         }}
         """
