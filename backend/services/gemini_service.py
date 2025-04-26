@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 import time
 import asyncio
+from .prompts import GeminiPrompts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ class GeminiService:
         # 1. Try finding JSON within markdown code blocks first
         json_pattern = r"```(?:json)?\s*(\{[\s\S]*?\})\s*```" # More specific pattern for object
         match = re.search(json_pattern, response_text)
-
+        
         json_str = None
         if match:
             json_str = match.group(1)
@@ -54,8 +55,8 @@ class GeminiService:
             else:
                 # 3. If no '{' found or markdown block, use the whole response
                 logger.debug("No JSON block or starting '{' found. Using full response text.")
-                json_str = response_text
-
+            json_str = response_text
+            
         try:
             logger.info(f"Attempting to parse JSON string: {json_str[:200]}...") # Log more context
             return json.loads(json_str)
@@ -70,24 +71,7 @@ class GeminiService:
 
     async def analyze_company(self, company_name: str, max_retries: int = 1):
         """Analyze what the company does and generate a friendly message."""
-        prompt = f"""
-        Analyze the company named {company_name}.
-        Provide the following information in JSON format:
-        1. A concise yet informative description (2-3 sentences) of what the company does, including its primary products/services and target audience.
-        2. The main industry or sector it operates within.
-        3. A friendly, professional, and slightly enthusiastic welcome message (1-2 sentences) tailored for a user from this specific company who is about to use a competitive intelligence platform. **Optionally, integrate a simple, non-offensive, lighthearted pun related to the company's name or main industry or their primary function into this welcome message.**
-        
-        IMPORTANT: Output ONLY the JSON object with the following exact structure.
-        **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
-        - All property names must be in double quotes
-        - All string values must be in double quotes
-        
-        {{
-            "description": "...",
-            "industry": "...",
-            "welcome_message": "..."
-        }}
-        """
+        prompt = GeminiPrompts.company_analysis(company_name)
         
         attempt = 0
         last_exception = None
@@ -160,35 +144,11 @@ class GeminiService:
             "industry": "Unknown",
             "welcome_message": f"Welcome, {company_name} user! We're gathering competitive intelligence for you."
         }
-
+                
     async def identify_competitors(self, company_name: str) -> dict:
         """Identify competitors for a given company."""
         try:
-            prompt = f"""You are a business analyst with expertise in competitive analysis.
-Identify 3-5 main competitors for {company_name}.
-
-For each competitor, provide:
-1. Name
-2. Brief description (1-2 sentences)
-3. 3-5 key strengths as bullet points
-4. 2-3 key weaknesses as bullet points
-
-EXTREMELY IMPORTANT: Format your response as VALID JSON ONLY. No explanations or text outside of the JSON.
-The valid JSON MUST be structured precisely as follows:
-{{
-    "competitors": [
-        {{
-            "name": "Competitor Name",
-            "description": "Brief description of the competitor.",
-            "strengths": ["Strength 1", "Strength 2", "Strength 3"],
-            "weaknesses": ["Weakness 1", "Weakness 2"]
-        }},
-        ...more competitors...
-    ]
-}}
-
-IMPORTANT: Ensure valid JSON output with proper commas, brackets, and quotes. Do not include trailing commas. Your entire response must be valid parseable JSON and nothing else.
-"""
+            prompt = GeminiPrompts.identify_competitors(company_name)
 
             # Try up to 3 times to get valid JSON
             max_attempts = 3
@@ -240,7 +200,7 @@ IMPORTANT: Ensure valid JSON output with proper commas, brackets, and quotes. Do
             
             # This should not be reached due to the return in the loop, but just in case
             return {"competitors": []}
-            
+                
         except Exception as e:
             logging.error(f"Error identifying competitors: {str(e)}")
             return {"competitors": []}
@@ -280,48 +240,7 @@ IMPORTANT: Ensure valid JSON output with proper commas, brackets, and quotes. Do
                 news_context += f"HEADLINE: {article['title']}\n"
                 news_context += f"CONTENT: {article['content']}\n\n"
         
-        prompt = f"""
-        As a competitive intelligence analyst, synthesize the provided information about {company_name}, its competitors, and recent news to generate 5-10 strategic insights.
-        These insights should highlight competitive opportunities, threats, or significant market trends relevant to {company_name}.
-
-        COMPANY: {company_name}
-
-        COMPETITORS INFORMATION:
-        {json.dumps(competitors_data, indent=2)}
-
-        NEWS DATA:
-        {news_context}
-
-        Instructions:
-        - Generate 5 to 10 distinct insights.
-        - Each insight must be directly supported by the provided Competitor Information and/or News Data.
-        - For each insight, provide:
-            - A concise 'title'.
-            - A 'description' that explains the insight and its potential implication for {company_name}. Reference the relevant information from the context (e.g., "Competitor X's recent acquisition...", "News about Trend Y...").
-            - A 'type' labeled as either "opportunity", "threat", or "trend".
-            - A list of 'related_competitors' (names from the provided list) that are most relevant to this insight.
-        - If news data is limited, focus insights primarily on the provided competitor strengths/weaknesses and general industry trends.
-        
-        IMPORTANT: Output ONLY the JSON object with the following exact structure.
-        **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
-        - Each object must end with a comma if it's not the last item in the list
-        - All arrays and objects must be properly closed with ] or }}
-        - No trailing commas after the last item in an array or object
-        - All property names must be in double quotes
-        - All string values must be in double quotes
-        
-        {{
-            "insights": [
-                {{
-                    "title": "...",
-                    "description": "...",
-                    "type": "opportunity|threat|trend",
-                    "related_competitors": ["...", "..."]
-                }},
-                ...
-            ]
-        }}
-        """
+        prompt = GeminiPrompts.generate_insights(company_name, competitors_data, news_context)
         
         try:
             contents = [
@@ -362,66 +281,12 @@ IMPORTANT: Ensure valid JSON output with proper commas, brackets, and quotes. Do
             logger.error(f"Error generating insights: {e}")
             raise
 
-    async def deep_research_competitor(self, competitor_name: str, competitor_description: Optional[str]):
+    async def deep_research_competitor(self, competitor_name: str, competitor_description: Optional[str], company_name: Optional[str] = None):
         """Generates an in-depth research report for a competitor using a Pro model."""
         logger.info(f"Starting deep research for: {competitor_name} using model {self.pro_model}")
+        company_context = f"for {company_name}" if company_name else ""
 
-        # --- DETAILED PROMPT ---
-        prompt = f"""
-        Generate a comprehensive competitive analysis report in Markdown format for the company: **{competitor_name}**.
-        Use its known description as a starting point: "{competitor_description or 'No initial description provided.'}"
-
-        Structure the report with the following sections using appropriate Markdown headings (e.g., ## Section Title):
-
-        1.  **Company Overview:**
-            *   Detailed description of the company, its mission, vision, and core business.
-            *   History and founding details (if available).
-            *   Key locations, size (employee count estimates), and organizational structure highlights.
-
-        2.  **Products & Services:**
-            *   Detailed breakdown of major product lines and service offerings.
-            *   Target customer segments for each offering.
-            *   Key features, functionalities, and unique selling propositions (USPs).
-            *   Pricing model overview (e.g., subscription tiers, enterprise pricing, freemium).
-
-        3.  **Technology & Innovation:**
-            *   Core technologies utilized (AI/ML models, platforms, infrastructure).
-            *   Recent technological advancements or R&D focus areas.
-            *   Patents or notable intellectual property (if discoverable).
-            *   Approach to innovation (e.g., internal R&D, acquisitions, partnerships).
-
-        4.  **Market Position & Strategy:**
-            *   Estimated market share or standing within its primary industry segment(s).
-            *   Key competitive advantages.
-            *   Go-to-market strategy (sales channels, marketing approaches).
-            *   Recent strategic moves (major partnerships, M&A activity, geographic expansion).
-
-        5.  **Financial Health & Funding (if publicly available/discoverable):**
-            *   Overview of financial performance (revenue trends, profitability if reported).
-            *   Major funding rounds (dates, amounts, key investors).
-            *   Stock performance overview (if public).
-
-        6.  **SWOT Analysis:**
-            *   Strengths: Internal capabilities that provide an advantage.
-            *   Weaknesses: Internal limitations or disadvantages.
-            *   Opportunities: External factors the company could leverage.
-            *   Threats: External factors that could negatively impact the company.
-            *   (Provide brief explanations for each point)
-
-        7.  **Recent News & Developments (Summarized):**
-            *   Summary of key news headlines, press releases, or significant announcements from the last 6-12 months. Focus on strategically relevant items.
-
-        8.  **Key Personnel:**
-            *   CEO and other key executives (names, roles, brief background if notable).
-
-        **Instructions:**
-        *   Conduct thorough research using available tools.
-        *   Synthesize information into a coherent report.
-        *   Use clear and professional language.
-        *   Format the entire output strictly as Markdown.
-        *   Do not include any preamble or explanation outside the Markdown report itself. Start directly with the first heading.
-        """
-        # --- END DETAILED PROMPT ---
+        prompt = GeminiPrompts.deep_research_competitor(competitor_name, competitor_description, company_name)
 
         try:
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
@@ -429,23 +294,36 @@ IMPORTANT: Ensure valid JSON output with proper commas, brackets, and quotes. Do
             tools = [types.Tool(google_search=types.GoogleSearch())]
             generate_content_config = types.GenerateContentConfig(
                 tools=tools,
-                response_mime_type="text/plain", # Requesting Markdown, but API expects text
+                response_mime_type="text/plain",
+                temperature=0.65 # Lower temperature for more factual reporting
             )
 
-            # Use the Pro model for this call
+            logger.info(f"Generating deep research using model: {self.pro_model}")
             response_text = ""
+            # Use the Pro model
             for chunk in self.client.models.generate_content_stream(
-                model=self.pro_model, # Use the Pro model here
+                model=self.pro_model,
                 contents=contents,
                 config=generate_content_config,
             ):
-                if hasattr(chunk, 'text'):
-                    response_text += chunk.text
+                # Safety check for response attributes
+                part = getattr(chunk, 'parts', [None])[0]
+                text = getattr(part, 'text', None) if part else None
+                if text:
+                    response_text += text
 
-            # Assume the response is the Markdown content
-            logger.info(f"Deep research content generated for: {competitor_name}")
-            return response_text
+            logger.info(f"Deep research raw content generated for: {competitor_name} {company_context}")
+            # Basic check if response seems valid markdown (starts with #)
+            if response_text and response_text.strip().startswith("#"):
+                return response_text
+            else:
+                logger.warning(f"Deep research for {competitor_name} did not return expected Markdown format. Response snippet: {response_text[:200]}")
+                # Return the raw response wrapped in an error markdown block
+                return f"## Warning: Potential Formatting Issue\n\nThe generated content might not be in the expected Markdown format.\n\n```\n{response_text}\n```"
 
         except Exception as e:
-            logger.error(f"Error during deep research for {competitor_name}: {e}")
+            logger.error(f"Error during deep research for {competitor_name} {company_context}: {e}")
+            # Log the full exception traceback for debugging
+            import traceback
+            logger.error(traceback.format_exc())
             return f"## Error\n\nAn error occurred during deep research generation for {competitor_name}:\n\n```\n{str(e)}\n```" 

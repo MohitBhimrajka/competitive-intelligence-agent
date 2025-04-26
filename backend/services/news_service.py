@@ -6,6 +6,7 @@ from newsapi import NewsApiClient
 from datetime import datetime, timedelta
 from google import genai
 from google.genai import types
+from .prompts import NewsPrompts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,44 +58,7 @@ class NewsService:
             from_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
             to_date = datetime.now().strftime('%Y-%m-%d')
             
-            prompt = f"""
-            Using search tools, find recent (roughly within the last {days_back} days) significant developments, announcements, or discussions about the company "{competitor_name}".
-            This could include news articles, major blog posts, press releases, or significant website updates related to:
-            - Business strategy, product launches, or partnerships
-            - Financial news (funding, earnings reports if significant)
-            - Mergers, acquisitions, or leadership changes
-            - Major competitive actions or market positioning statements
-
-            For each relevant item found, provide the following information. Prioritize items with clear business impact.
-            - "title": The title or a concise description of the development.
-            - "source": The name of the publication, website, or source type (e.g., "Company Blog", "TechCrunch", "Press Release").
-            - "url": The direct link if available.
-            - "publishedAt": The publication date/time (ISO 8601 format YYYY-MM-DDTHH:MM:SSZ or YYYY-MM-DD preferred). If unavailable, use null or omit.
-            - "content": A brief summary (a few sentences) explaining the development and its significance.
-
-            Return up to 5-7 of the most relevant items found. If fewer relevant items exist, return all that were found. If no relevant items are found, return an empty array.
-
-            IMPORTANT: Output ONLY the JSON object with the following exact structure.
-            **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
-            - Each object must end with a comma if it's not the last item in the list
-            - All arrays and objects must be properly closed with ] or }}
-            - No trailing commas after the last item in an array or object
-            - All property names must be in double quotes
-            - All string values must be in double quotes
-            
-            {{
-                "articles": [
-                    {{
-                        "title": "...",
-                        "source": "...",
-                        "url": "...",
-                        "publishedAt": "...",
-                        "content": "..."
-                    }},
-                    ... (up to 5-7 items)
-                ]
-            }}
-            """
+            prompt = NewsPrompts.get_news_with_gemini(competitor_name, days_back)
             
             contents = [
                 types.Content(

@@ -28,6 +28,9 @@ env.bak/
 venv.bak/
 .pytest_cache/
 
+# PDF files
+*.pdf
+
 # Node.js
 node_modules/
 npm-debug.log

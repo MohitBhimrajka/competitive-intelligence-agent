@@ -1,10 +1,11 @@
 import os
 import logging
 import faiss
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.vectorstores import FAISS
-from langchain.docstore.document import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_ollama import OllamaLLM
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -20,12 +21,12 @@ FAISS_INDEX_PATH = "./faiss_indexes" # Directory to save indexes
 EMBEDDING_MODEL_NAME = "models/embedding-001" # Google's embedding model
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
-LLM_MODEL_NAME = "gemini-2.5-pro-preview-03-25" # Or flash for speed/cost saving
+LLM_MODEL_NAME = "gemma3:12b" # Local Ollama model
 
 class RAGService:
     def __init__(self):
         self.embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL_NAME)
-        self.llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0.3)
+        self.llm = OllamaLLM(model=LLM_MODEL_NAME, temperature=0.3)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
             chunk_overlap=CHUNK_OVERLAP,

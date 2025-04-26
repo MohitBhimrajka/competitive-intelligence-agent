@@ -1,15 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from fastapi.responses import StreamingResponse
-from typing import List, Optional
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
 import logging
 import io
+import os
+import tempfile
 import markdown
-from xhtml2pdf import pisa
 
 from services.database import db
 from services.gemini_service import GeminiService
+from services.pdf_service import pdf_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,6 +43,14 @@ class CompetitorResponse(BaseModel):
 class ResearchResponse(BaseModel):
     message: str
     competitor_id: str
+    status: str
+
+class MultiResearchRequest(BaseModel):
+    competitor_ids: List[str]
+
+class MultiResearchResponse(BaseModel):
+    message: str
+    competitor_ids: List[str]
     status: str
 
 # Mock database
@@ -124,9 +134,54 @@ async def trigger_deep_research(competitor_id: str, background_tasks: Background
         status="pending"
     )
 
+@router.post("/deep-research/multiple", response_model=MultiResearchResponse)
+async def trigger_multiple_deep_research(request: MultiResearchRequest, background_tasks: BackgroundTasks):
+    """Initiates deep research for multiple competitors in parallel."""
+    if not request.competitor_ids:
+        raise HTTPException(status_code=400, detail="No competitor IDs provided")
+    
+    # Check if all competitors exist
+    invalid_ids = []
+    pending_ids = []
+    valid_ids = []
+    
+    for competitor_id in request.competitor_ids:
+        competitor = await db.get_competitor(competitor_id)
+        if not competitor:
+            invalid_ids.append(competitor_id)
+        elif competitor.get("deep_research_status") == "pending":
+            pending_ids.append(competitor_id)
+        else:
+            valid_ids.append(competitor_id)
+    
+    if invalid_ids:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Competitors not found: {', '.join(invalid_ids)}"
+        )
+    
+    # Update status and start background tasks for valid competitors
+    for competitor_id in valid_ids:
+        await db.update_competitor_research(competitor_id, markdown=None, status="pending")
+        background_tasks.add_task(run_deep_research, competitor_id)
+    
+    # Create appropriate message
+    if pending_ids and valid_ids:
+        message = f"Deep research initiated for {len(valid_ids)} competitors. {len(pending_ids)} were already in progress."
+    elif pending_ids:
+        message = f"All {len(pending_ids)} competitors already had research in progress."
+    else:
+        message = f"Deep research initiated for all {len(valid_ids)} competitors."
+    
+    return MultiResearchResponse(
+        message=message,
+        competitor_ids=request.competitor_ids,
+        status="pending"
+    )
+
 @router.get("/{competitor_id}/deep-research/download")
 async def download_deep_research_pdf(competitor_id: str):
-    """Downloads the deep research report as a PDF."""
+    """Downloads the deep research report."""
     competitor = await db.get_competitor(competitor_id)
     if not competitor:
         raise HTTPException(status_code=404, detail="Competitor not found")
@@ -137,51 +192,123 @@ async def download_deep_research_pdf(competitor_id: str):
     if status != "completed" or not markdown_content:
         raise HTTPException(status_code=404, detail=f"Deep research not completed or available for {competitor['name']}.")
 
-    # Convert Markdown to HTML
     try:
-        html_content = markdown.markdown(markdown_content, extensions=['extra', 'sane_lists'])
-        # Basic CSS for better PDF readability
-        html_with_style = f"""
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body {{ font-family: sans-serif; line-height: 1.4; }}
-                h1, h2, h3 {{ color: #333; }}
-                code {{ background-color: #f0f0f0; padding: 2px 4px; border-radius: 3px; }}
-                pre {{ background-color: #f0f0f0; padding: 10px; border-radius: 5px; overflow-x: auto; }}
-                li {{ margin-bottom: 5px; }}
-            </style>
-        </head>
-        <body>
-            <h1>Deep Research Report: {competitor['name']}</h1>
-            {html_content}
-        </body>
-        </html>
-        """
+        # Save markdown to temp file for processing
+        temp_md = tempfile.NamedTemporaryFile(delete=False, suffix='.md')
+        temp_md.write(markdown_content.encode('utf-8'))
+        temp_md.close()
+        
+        # Generate HTML with professional styling
+        title = f"Deep Research: {competitor['name']}"
+        html_buffer = pdf_service.markdown_to_pdf(markdown_content, title)
+        
+        # Clean up temp file
+        os.unlink(temp_md.name)
+        
+        # Create filename
+        safe_filename = "".join(c for c in competitor['name'] if c.isalnum() or c in (' ', '_')).rstrip().replace(' ', '_')
+        filename = f"{safe_filename}_Deep_Research.html"
+        
+        logger.info(f"HTML report generated successfully for competitor {competitor_id}")
+        return HTMLResponse(
+            content=html_buffer.read(),
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+    
     except Exception as e:
-         logger.error(f"Markdown conversion error: {e}")
-         raise HTTPException(status_code=500, detail="Failed to convert report to HTML format.")
+        logger.error(f"HTML report generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
 
-    # Convert HTML to PDF
-    pdf_buffer = io.BytesIO()
-    pisa_status = pisa.CreatePDF(io.StringIO(html_with_style), dest=pdf_buffer)
-
-    if pisa_status.err:
-        logger.error(f"PDF generation error: {pisa_status.err}")
-        raise HTTPException(status_code=500, detail="Failed to generate PDF report.")
-
-    pdf_buffer.seek(0)
-
-    # Create filename
-    safe_filename = "".join(c for c in competitor['name'] if c.isalnum() or c in (' ', '_')).rstrip()
-    filename = f"{safe_filename}_Deep_Research.pdf"
-
-    return StreamingResponse(
-        pdf_buffer,
-        media_type='application/pdf',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-    )
+@router.post("/deep-research/multiple/download")
+async def download_multiple_deep_research_pdf(request: MultiResearchRequest):
+    """Downloads a combined research report for multiple competitors."""
+    if not request.competitor_ids:
+        raise HTTPException(status_code=400, detail="No competitor IDs provided")
+    
+    # Check if all competitors have completed research
+    not_completed = []
+    competitors_data = []
+    company_name = None
+    
+    for competitor_id in request.competitor_ids:
+        competitor = await db.get_competitor(competitor_id)
+        if not competitor:
+            raise HTTPException(status_code=404, detail=f"Competitor not found: {competitor_id}")
+        
+        status = competitor.get("deep_research_status")
+        if status != "completed" or not competitor.get("deep_research_markdown"):
+            not_completed.append(competitor['name'])
+        else:
+            competitors_data.append(competitor)
+            
+        # Get company name for the report title
+        if not company_name and competitor.get("company_id"):
+            company = await db.get_company(competitor.get("company_id"))
+            if company:
+                company_name = company.get("name")
+    
+    if not_completed:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Research not completed for: {', '.join(not_completed)}"
+        )
+    
+    if not competitors_data:
+        raise HTTPException(status_code=404, detail="No completed research found")
+    
+    try:
+        # Create temp markdown files for each competitor
+        temp_files = []
+        competitor_names = []
+        
+        for i, competitor in enumerate(competitors_data):
+            temp_md = tempfile.NamedTemporaryFile(delete=False, suffix=f'_{i}.md')
+            temp_md.write(competitor['deep_research_markdown'].encode('utf-8'))
+            temp_md.close()
+            temp_files.append(temp_md.name)
+            competitor_names.append(competitor['name'])
+        
+        # Combine markdown files
+        combined_markdown = pdf_service.combine_markdown_files(temp_files, competitor_names)
+        
+        # Generate title
+        title = f"Competitive Intelligence: "
+        if company_name:
+            title += f"{company_name}"
+        else:
+            # Use first 2 competitor names if no company name
+            if len(competitor_names) > 2:
+                title += f"{competitor_names[0]}, {competitor_names[1]} & {len(competitor_names)-2} more"
+            else:
+                title += " & ".join(competitor_names)
+        
+        # Generate HTML
+        html_buffer = pdf_service.markdown_to_pdf(combined_markdown, title)
+        
+        # Clean up temp files
+        for temp_file in temp_files:
+            os.unlink(temp_file)
+        
+        # Create filename
+        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_')).rstrip().replace(' ', '_')
+        filename = f"{safe_title}_Competitive_Intelligence.html"
+        
+        logger.info(f"Combined HTML report generated successfully for {len(competitors_data)} competitors")
+        return HTMLResponse(
+            content=html_buffer.read(),
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
+    
+    except Exception as e:
+        # Clean up temp files in case of error
+        for temp_file in temp_files:
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+                
+        logger.error(f"Combined HTML report generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate combined report: {str(e)}")
 
 async def run_deep_research(competitor_id: str):
     """Background task to execute deep research and update DB."""
@@ -192,10 +319,20 @@ async def run_deep_research(competitor_id: str):
             return
         
         company_id = competitor.get("company_id")
+        
+        # Get company name if available
+        company_name = None
+        if company_id:
+            company = await db.get_company(company_id)
+            if company:
+                company_name = company.get("name")
+                logger.info(f"[Deep Research Task] Research for {competitor['name']} initiated by company: {company_name}")
+        
         logger.info(f"[Deep Research Task] Starting for {competitor['name']} ({competitor_id})")
         markdown_report = await gemini_service.deep_research_competitor(
             competitor['name'],
-            competitor.get('description')
+            competitor.get('description'),
+            company_name
         )
 
         # Check if report generation resulted in an error message
