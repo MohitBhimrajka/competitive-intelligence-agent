@@ -19,7 +19,7 @@ class NewsService:
             # Initialize Gemini API client
             api_key = os.getenv("GOOGLE_API_KEY")
             self.gemini_client = genai.Client(api_key=api_key)
-            self.model = "gemini-2.5-pro-preview-03-25"
+            self.model = "gemini-2.5-flash-preview-04-17"
             
             logger.info("News API service initialized")
         except Exception as e:
@@ -126,9 +126,27 @@ class NewsService:
                 if not isinstance(result, dict):
                     logger.error(f"Invalid result type from Gemini: {type(result)}")
                     return []
+                
                 gemini_articles = result.get('articles', [])
-                logger.info(f"Gemini found {len(gemini_articles)} relevant developments for {competitor_name}")
-                return gemini_articles
+                
+                # Validate articles and ensure all fields have safe defaults
+                sanitized_articles = []
+                for article in gemini_articles:
+                    if not isinstance(article, dict):
+                        logger.warning(f"Skipping non-dict article: {type(article)}")
+                        continue
+                        
+                    sanitized_article = {
+                        'title': article.get('title', '') or '',
+                        'source': article.get('source', 'Unknown') or 'Unknown',
+                        'url': article.get('url') if article.get('url') else None,
+                        'publishedAt': article.get('publishedAt', '') or '',
+                        'content': article.get('content', '') or ''
+                    }
+                    sanitized_articles.append(sanitized_article)
+                
+                logger.info(f"Gemini found {len(sanitized_articles)} relevant developments for {competitor_name}")
+                return sanitized_articles
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from Gemini response: {response_text}")
                 return []
@@ -148,67 +166,80 @@ class NewsService:
         Returns:
             list: List of news articles and relevant developments
         """
-        news_api_articles = await self._get_news_api_articles(competitor_name, days_back)
-        gemini_developments = await self.get_news_with_gemini(competitor_name, days_back)
-        
-        # Combine articles, deduplicate based on URL
-        all_items = []
-        seen_urls = set()
-        
-        # Process NewsAPI articles first
-        for article in news_api_articles:
-            url = article.get('url', '')
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                processed_article = {
-                    'title': article.get('title', ''),
-                    'source': article.get('source', 'Unknown'),
-                    'url': url,
-                    'published_at': article.get('published_at') or "",  # Ensure string
-                    'content': article.get('content', '')
-                }
-                all_items.append(processed_article)
-            elif not url:  # Handle NewsAPI articles potentially missing URL
-                processed_article = {
-                    'title': article.get('title', ''),
-                    'source': article.get('source', 'Unknown'),
-                    'url': None,
-                    'published_at': article.get('published_at') or "",  # Ensure string
-                    'content': article.get('content', '')
-                }
-                all_items.append(processed_article)
-        
-        # Then add Gemini items that don't duplicate URLs
-        for item in gemini_developments:
-            url = item.get('url', '')
-            if url:
-                if url not in seen_urls:
+        try:
+            news_api_articles = await self._get_news_api_articles(competitor_name, days_back)
+            gemini_developments = await self.get_news_with_gemini(competitor_name, days_back)
+            
+            # Combine articles, deduplicate based on URL
+            all_items = []
+            seen_urls = set()
+            
+            # Process NewsAPI articles first
+            for article in news_api_articles:
+                if not isinstance(article, dict):
+                    logger.warning(f"Skipping non-dict NewsAPI article: {type(article)}")
+                    continue
+                    
+                url = article.get('url', '')
+                if url and url not in seen_urls:
                     seen_urls.add(url)
-                    processed_item = {
-                        'title': item.get('title', ''),
-                        'source': item.get('source', 'Unknown'),
+                    processed_article = {
+                        'title': article.get('title', '') or '',
+                        'source': article.get('source', 'Unknown') or 'Unknown',
                         'url': url,
-                        'published_at': item.get('publishedAt') or "",  # Ensure string
-                        'content': item.get('content', '')
+                        'published_at': article.get('published_at', '') or '',
+                        'content': article.get('content', '') or ''
+                    }
+                    all_items.append(processed_article)
+                elif not url:  # Handle NewsAPI articles potentially missing URL
+                    processed_article = {
+                        'title': article.get('title', '') or '',
+                        'source': article.get('source', 'Unknown') or 'Unknown',
+                        'url': None,
+                        'published_at': article.get('published_at', '') or '',
+                        'content': article.get('content', '') or ''
+                    }
+                    all_items.append(processed_article)
+            
+            # Then add Gemini items that don't duplicate URLs
+            for item in gemini_developments:
+                if not isinstance(item, dict):
+                    logger.warning(f"Skipping non-dict Gemini item: {type(item)}")
+                    continue
+                    
+                url = item.get('url', '')
+                if url:
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        processed_item = {
+                            'title': item.get('title', '') or '',
+                            'source': item.get('source', 'Unknown') or 'Unknown',
+                            'url': url,
+                            'published_at': item.get('publishedAt', '') or '',
+                            'content': item.get('content', '') or ''
+                        }
+                        all_items.append(processed_item)
+                else:
+                    # Add items without URL
+                    processed_item = {
+                        'title': item.get('title', '') or '',
+                        'source': item.get('source', 'Unknown Source') or 'Unknown Source',
+                        'url': None,
+                        'published_at': item.get('publishedAt', '') or '',
+                        'content': item.get('content', '') or ''
                     }
                     all_items.append(processed_item)
-            else:
-                # Add items without URL
-                processed_item = {
-                    'title': item.get('title', ''),
-                    'source': item.get('source', 'Unknown Source'),
-                    'url': None,
-                    'published_at': item.get('publishedAt') or "",  # Ensure string
-                    'content': item.get('content', '')
-                }
-                all_items.append(processed_item)
-        
-        logger.info(f"Retrieved {len(all_items)} total items for {competitor_name} (NewsAPI: {len(news_api_articles)}, Gemini: {len(gemini_developments)})")
-        
-        # Sort by publication date, newest first (with a fallback for missing dates)
-        all_items.sort(key=lambda x: x.get('published_at') or '0000-00-00', reverse=True)
-        
-        return all_items
+            
+            logger.info(f"Retrieved {len(all_items)} total items for {competitor_name} (NewsAPI: {len(news_api_articles)}, Gemini: {len(gemini_developments)})")
+            
+            # Sort by publication date, newest first (with a fallback for missing dates)
+            # Ensure sort key never returns None to prevent TypeError
+            all_items.sort(key=lambda x: (x.get('published_at') or '0000-00-00'), reverse=True)
+            
+            return all_items
+        except Exception as e:
+            logger.error(f"Error in get_competitor_news for {competitor_name}: {e}")
+            return []
 
     async def _get_news_api_articles(self, competitor_name: str, days_back: int = 30):
         """

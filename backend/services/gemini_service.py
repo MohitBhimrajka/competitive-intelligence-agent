@@ -14,7 +14,7 @@ class GeminiService:
             # Initialize Gemini client using direct API key (not Vertex AI)
             api_key = os.getenv("GOOGLE_API_KEY")
             self.client = genai.Client(api_key=api_key)
-            self.model = "gemini-2.5-pro-preview-03-25"  # Using standard model instead of flash preview
+            self.model = "gemini-2.5-flash-preview-04-17"  # Using standard model instead of flash preview
             logger.info("Gemini service initialized")
         except Exception as e:
             logger.error(f"Error initializing Gemini service: {e}")
