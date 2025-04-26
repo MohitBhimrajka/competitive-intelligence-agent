@@ -19,7 +19,7 @@ class NewsService:
             # Initialize Gemini API client
             api_key = os.getenv("GOOGLE_API_KEY")
             self.gemini_client = genai.Client(api_key=api_key)
-            self.model = "gemini-2.5-flash-preview-04-17"
+            self.model = "gemini-2.5-pro-preview-03-25"
             
             logger.info("News API service initialized")
         except Exception as e:
@@ -45,8 +45,8 @@ class NewsService:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
             logger.error(f"Response text was: {response_text}")
-            # Return empty list instead of raising exception to avoid crashes
-            return []
+            # Re-raise exception to be handled by callers
+            raise
 
     async def get_news_with_gemini(self, competitor_name: str, days_back: int = 30):
         """
@@ -123,7 +123,10 @@ class NewsService:
             # Extract JSON from response
             try:
                 result = self._extract_json_from_response(response_text)
-                gemini_articles = result.get('articles', []) if isinstance(result, dict) else []
+                if not isinstance(result, dict):
+                    logger.error(f"Invalid result type from Gemini: {type(result)}")
+                    return []
+                gemini_articles = result.get('articles', [])
                 logger.info(f"Gemini found {len(gemini_articles)} relevant developments for {competitor_name}")
                 return gemini_articles
             except json.JSONDecodeError:

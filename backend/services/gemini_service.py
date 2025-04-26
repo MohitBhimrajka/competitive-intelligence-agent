@@ -14,7 +14,7 @@ class GeminiService:
             # Initialize Gemini client using direct API key (not Vertex AI)
             api_key = os.getenv("GOOGLE_API_KEY")
             self.client = genai.Client(api_key=api_key)
-            self.model = "gemini-2.5-flash-preview-04-17"  # Using standard model instead of Vertex preview
+            self.model = "gemini-2.5-pro-preview-03-25"  # Using standard model instead of flash preview
             logger.info("Gemini service initialized")
         except Exception as e:
             logger.error(f"Error initializing Gemini service: {e}")
@@ -39,8 +39,8 @@ class GeminiService:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
             logger.error(f"Response text was: {response_text}")
-            # Return empty list instead of raising exception to avoid crashes
-            return []
+            # Re-raise exception to be handled by callers
+            raise
 
     async def analyze_company(self, company_name: str):
         """Analyze what the company does and generate a friendly message."""
@@ -172,7 +172,12 @@ class GeminiService:
             
             # Extract JSON from response
             try:
-                return self._extract_json_from_response(response_text)
+                result = self._extract_json_from_response(response_text)
+                # Ensure result is a dict with competitors key
+                if not isinstance(result, dict) or "competitors" not in result:
+                    logger.error(f"Invalid result format from Gemini: {result}")
+                    return {"competitors": []}
+                return result
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from competitors response: {response_text}")
                 # Return empty competitors list as fallback
@@ -259,7 +264,11 @@ class GeminiService:
             # Extract JSON from response
             try:
                 result = self._extract_json_from_response(response_text)
-                insights = result.get('insights', []) if isinstance(result, dict) else []
+                # Ensure result is a dict with insights key
+                if not isinstance(result, dict):
+                    logger.error(f"Invalid result type from Gemini: {type(result)}")
+                    return {"insights": []}
+                insights = result.get('insights', [])
                 return {"insights": insights}
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from insights response: {response_text}")
