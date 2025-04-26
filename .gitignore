@@ -82,6 +82,7 @@ dist-ssr
 .cache/
 
 # RAG Index files
+backend/faiss_indexes/
 backend/indexes/
 *.index
 *.faiss
