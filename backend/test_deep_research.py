@@ -275,51 +275,137 @@ def check_multiple_research_status(company_id: str, competitor_ids: list, target
         return list(completed_competitors.values())
     return None
 
-def download_research_html(competitor_id: str, competitor_name: str):
-    """Downloads the deep research HTML report and saves it."""
+def download_research_pdf(competitor_id: str, competitor_name: str):
+    """Downloads the deep research PDF report and checks headers."""
     print("\n" + "-"*40)
-    print(f"Attempting to Download Deep Research HTML for: {competitor_name} ({competitor_id})")
+    print(f"Attempting to Download Deep Research PDF for: {competitor_name} ({competitor_id})")
     print("-"*40)
+    download_dir = "test_downloads" # Optional: Directory to save PDFs
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
     try:
-        response = requests.get(f"{API_BASE_URL}/api/competitor/{competitor_id}/deep-research/download", stream=True)
+        response = requests.get(f"{API_BASE_URL}/api/competitor/{competitor_id}/deep-research/download", stream=True, timeout=60)
         print(f"Status code: {response.status_code}")
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
 
-        if response.status_code == 200:
-            print(f"Headers: {response.headers}")
-            content_type = response.headers.get('content-type')
-            content_disp = response.headers.get('Content-Disposition')
+        print(f"Headers: {response.headers}")
+        content_type = response.headers.get('content-type')
+        content_disp = response.headers.get('Content-Disposition')
 
-            if content_type == 'text/html' and content_disp:
-                # Extract filename safely
-                filename_part = content_disp.split('filename=')[-1]
-                if filename_part:
-                    filename = filename_part.strip('"')
-                else: # Fallback filename
-                     safe_name = "".join(c for c in competitor_name if c.isalnum() or c in (' ', '_')).rstrip()
-                     filename = f"{safe_name}_Deep_Research_Report.html"
+        # Check for PDF content type
+        if content_type == 'application/pdf' and content_disp:
+            # Extract filename safely
+            filename_part = content_disp.split('filename=')[-1]
+            if filename_part:
+                filename = filename_part.strip('"')
+            else: # Fallback filename
+                 safe_name = "".join(c for c in competitor_name if c.isalnum() or c in (' ', '_')).rstrip()
+                 filename = f"{safe_name}_Deep_Research_Report.pdf" # Ensure .pdf
 
-                print(f"Attempting to save HTML as: {filename}")
-                try:
-                    with open(filename, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                    print(f"Successfully saved HTML: {filename}")
+            save_path = os.path.join(download_dir, filename)
+            print(f"Attempting to save PDF as: {save_path}")
+            content_length = 0
+            try:
+                with open(save_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        content_length += len(chunk)
+                if content_length > 100: # Basic check: is the PDF file reasonably sized?
+                    print(f"Successfully saved PDF ({content_length} bytes): {save_path}")
                     return True
-                except Exception as save_err:
-                    logger.error(f"Error saving HTML file {filename}: {save_err}")
-                    print(f"ERROR saving HTML: {save_err}")
+                else:
+                    print(f"ERROR: Saved PDF file seems too small ({content_length} bytes). Check content.")
                     return False
-            else:
-                print("ERROR: Invalid headers received for HTML download.")
-                print(f"Content-Type: {content_type}, Content-Disposition: {content_disp}")
+            except Exception as save_err:
+                logger.error(f"Error saving PDF file {save_path}: {save_err}")
+                print(f"ERROR saving PDF: {save_err}")
                 return False
         else:
-            print(f"Error response during download: {response.text}")
+            print("ERROR: Invalid headers received for PDF download.")
+            print(f"Content-Type: {content_type}, Content-Disposition: {content_disp}")
+            # Print response text if not PDF, might contain error details
+            if content_type != 'application/pdf':
+                 print(f"Response Text (first 500 chars): {response.text[:500]}")
             return False
-    except Exception as e:
-        logger.error(f"Error downloading HTML: {e}")
-        print(f"ERROR downloading HTML: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error downloading PDF: {e}")
+        print(f"ERROR downloading PDF: {e}")
+        # Print response text if available on error
+        if hasattr(e, 'response') and e.response is not None:
+             print(f"Error Response Text (first 500 chars): {e.response.text[:500]}")
         return False
+    except Exception as e: # Catch other potential errors
+         logger.error(f"Unexpected error during PDF download: {e}")
+         print(f"UNEXPECTED ERROR during PDF download: {e}")
+         return False
+
+def download_combined_research_pdf(competitor_ids: list, company_name: str):
+    """Downloads the combined research PDF for multiple competitors."""
+    print("\n" + "-"*40)
+    print(f"Attempting to Download Combined Research PDF for {len(competitor_ids)} competitors")
+    print("-"*40)
+    download_dir = "test_downloads"
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/api/competitor/deep-research/multiple/download",
+            json={"competitor_ids": competitor_ids},
+            stream=True,
+            timeout=60
+        )
+        print(f"Status code: {response.status_code}")
+        response.raise_for_status()
+
+        print(f"Headers: {response.headers}")
+        content_type = response.headers.get('content-type')
+        content_disp = response.headers.get('Content-Disposition')
+
+        if content_type == 'application/pdf' and content_disp:
+            # Extract filename safely
+            filename_part = content_disp.split('filename=')[-1]
+            if filename_part:
+                filename = filename_part.strip('"')
+            else: # Fallback filename
+                 safe_name = "".join(c for c in company_name if c.isalnum() or c in (' ', '_')).rstrip()
+                 filename = f"{safe_name}_Combined_Research_Report.pdf" # Ensure .pdf
+
+            save_path = os.path.join(download_dir, filename)
+            print(f"Attempting to save combined PDF as: {save_path}")
+            content_length = 0
+            try:
+                with open(save_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        content_length += len(chunk)
+                if content_length > 100: # Basic check
+                    print(f"Successfully saved combined PDF ({content_length} bytes): {save_path}")
+                    return True
+                else:
+                     print(f"ERROR: Saved combined PDF seems too small ({content_length} bytes). Check content.")
+                     return False
+            except Exception as save_err:
+                logger.error(f"Error saving combined PDF file {save_path}: {save_err}")
+                print(f"ERROR saving combined PDF: {save_err}")
+                return False
+        else:
+            print("ERROR: Invalid headers received for combined PDF download.")
+            print(f"Content-Type: {content_type}, Content-Disposition: {content_disp}")
+            if content_type != 'application/pdf':
+                 print(f"Response Text (first 500 chars): {response.text[:500]}")
+            return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error downloading combined PDF: {e}")
+        print(f"ERROR downloading combined PDF: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+             print(f"Error Response Text (first 500 chars): {e.response.text[:500]}")
+        return False
+    except Exception as e: # Catch other potential errors
+         logger.error(f"Unexpected error during combined PDF download: {e}")
+         print(f"UNEXPECTED ERROR during combined PDF download: {e}")
+         return False
 
 def download_combined_research_html(competitor_ids: list, company_name: str):
     """Downloads the combined research HTML for multiple competitors."""
@@ -438,110 +524,113 @@ def test_deep_research_flow(company_name: str):
                 else:
                     print("One or more invalid choices. Please try again.")
             except ValueError:
-                print("Invalid input. Please enter numbers separated by commas.")
+                print("Invalid input format. Please enter numbers separated by commas.")
                 
         if not selected_competitors:
-            print("Failed to select competitors.")
+            print("No valid competitors selected. Exiting.")
             sys.exit(1)
             
-        print(f"\nSelected {len(selected_competitors)} competitors:")
-        for comp in selected_competitors:
-            print(f"- {comp['name']} ({comp['id']})")
-            
+        # Extract IDs
         competitor_ids = [comp['id'] for comp in selected_competitors]
-            
-        # 6. Trigger Deep Research for multiple competitors
+        competitor_names = [comp['name'] for comp in selected_competitors]
+        
+        print(f"\nSelected {len(competitor_ids)} competitors for research: {', '.join(competitor_names)}")
+        
+        # 6. Trigger Deep Research
         if not trigger_multiple_deep_research(competitor_ids):
-            print("Failed to trigger multi-competitor deep research.")
+            print(f"Failed to trigger deep research for competitors. Check server logs.")
             sys.exit(1)
             
-        # 7. Wait for Deep Research Completion
-        completed_data = check_multiple_research_status(
-            company_id, 
-            competitor_ids, 
-            target_status="completed", 
-            max_wait_minutes=30
-        )  # Increased wait time for multiple competitors
-            
+        # 7. Wait for Completion
+        completed_data = check_multiple_research_status(company_id, competitor_ids)
+
         if not completed_data:
             print(f"Deep research did not complete successfully for any competitors.")
-            sys.exit(1)
-            
-        # 8. Print Completion Summary and Download HTMLs
+            sys.exit(1) # Exit if nothing completed
+
         print("\n" + "-"*40)
         print(f"Deep Research Completed for {len(completed_data)} of {len(competitor_ids)} competitors!")
         print("-"*40)
-        
-        # Download individual HTMLs
+
+        # Download individual PDFs
+        download_success_count = 0
         for competitor in completed_data:
             markdown_content = competitor.get('deep_research_markdown')
-            if markdown_content:
+            status = competitor.get('deep_research_status')
+            # Only attempt download if status is completed and markdown exists
+            if status == 'completed' and markdown_content and not markdown_content.strip().startswith("## Error"):
                 print(f"\nMarkdown Content Snippet for {competitor['name']}:")
-                print(markdown_content[:500] + "\n...") # Print a longer snippet
-                
-                download_research_html(competitor['id'], competitor['name'])
+                print(markdown_content[:500] + "\n...")
+                if download_research_pdf(competitor['id'], competitor['name']):
+                     download_success_count += 1
+            elif status == 'error':
+                 print(f"\nSkipping download for {competitor['name']} due to error status.")
+                 print(f"Error Markdown: {markdown_content[:300]}...")
             else:
-                print(f"WARNING: Research completed for {competitor['name']} but no markdown content found!")
+                 print(f"\nSkipping download for {competitor['name']} (Status: {status}, Markdown Present: {bool(markdown_content)})")
+
+        # Download combined PDF only if there were successful individual reports
+        if download_success_count > 0:
+            completed_ids = [comp['id'] for comp in completed_data if comp.get('deep_research_status') == 'completed' and comp.get('deep_research_markdown') and not comp.get('deep_research_markdown').strip().startswith("## Error")]
+            if completed_ids:
+                 download_combined_research_pdf(completed_ids, company_name)
+            else:
+                 print("\nNo successfully completed reports to combine for PDF download.")
+        else:
+            print("\nNo successful individual reports to generate a combined PDF.")
                 
-        # Download combined HTML
-        download_combined_research_html(competitor_ids, company_name)
-        
     else:
-        # Single competitor mode
+        # For single mode, allow selecting one competitor
         print("\nAvailable Competitors:")
         for idx, comp in enumerate(competitors_list):
             print(f"{idx + 1}. {comp['name']} (ID: {comp['id']})")
-
-        selected_competitor = None
-        while not selected_competitor:
+            
+        selected_idx = -1
+        while selected_idx < 0 or selected_idx >= len(competitors_list):
             try:
-                choice = input(f"Enter the number of the competitor to research (1-{len(competitors_list)}), or press Enter for the first: ")
+                choice = input(f"Enter the number of a competitor to research (1-{len(competitors_list)}) or press Enter for the first one: ")
                 if not choice:
-                    selected_competitor = competitors_list[0]
+                    selected_idx = 0  # Default to first
                     break
-                choice_idx = int(choice) - 1
-                if 0 <= choice_idx < len(competitors_list):
-                    selected_competitor = competitors_list[choice_idx]
-                else:
-                    print("Invalid choice.")
+                selected_idx = int(choice) - 1
+                if selected_idx < 0 or selected_idx >= len(competitors_list):
+                    print(f"Invalid choice. Please enter a number between 1 and {len(competitors_list)}.")
             except ValueError:
                 print("Invalid input. Please enter a number.")
-            except IndexError:
-                 print("Invalid number selected.")
-
-        if not selected_competitor: # Should not happen with loop logic, but safety check
-             print("Failed to select a competitor.")
-             sys.exit(1)
-
-        competitor_id = selected_competitor['id']
-        competitor_name = selected_competitor['name']
-        print(f"\nSelected competitor: {competitor_name} ({competitor_id})")
-
+                
+        competitor = competitors_list[selected_idx]
+        competitor_id = competitor['id']
+        competitor_name = competitor['name']
+        
+        print(f"\nSelected competitor for research: {competitor_name}")
+        
         # 6. Trigger Deep Research
         if not trigger_deep_research(competitor_id):
-            print("Failed to trigger deep research.")
+            print(f"Failed to trigger deep research for {competitor_name}. Check server logs.")
             sys.exit(1)
-
-        # 7. Wait for Deep Research Completion
-        # This might take 5-15+ minutes depending on the model and complexity
-        completed_data = check_deep_research_status(company_id, competitor_id, target_status="completed", max_wait_minutes=20) # Increased wait time
+            
+        # 7. Wait for Completion
+        completed_data = check_deep_research_status(company_id, competitor_id)
 
         if not completed_data:
             print(f"Deep research did not complete successfully for {competitor_name}.")
             sys.exit(1)
 
-        # 8. Check Markdown and Download HTML
         print("\n" + "-"*40)
         print("Deep Research Completed!")
         print("-"*40)
         markdown_content = completed_data.get('deep_research_markdown')
-        if markdown_content:
-            print("Markdown Content Snippet:")
-            print(markdown_content[:1000] + "\n...") # Print a longer snippet
-        else:
-            print("WARNING: Research completed but no markdown content found in response!")
+        status = completed_data.get('deep_research_status')
 
-        download_research_html(competitor_id, competitor_name)
+        if status == 'completed' and markdown_content and not markdown_content.strip().startswith("## Error"):
+            print("Markdown Content Snippet:")
+            print(markdown_content[:1000] + "\n...")
+            download_research_pdf(competitor_id, competitor_name)
+        elif status == 'error':
+            print(f"Research for {competitor_name} resulted in an error.")
+            print(f"Error Markdown: {markdown_content[:500]}...")
+        else:
+             print(f"Research completed for {competitor_name} but content is missing or invalid (Status: {status}). Cannot download PDF.")
 
     print("\n" + "="*80)
     print("DEEP RESEARCH TEST COMPLETED")

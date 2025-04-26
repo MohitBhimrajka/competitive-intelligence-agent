@@ -4,35 +4,49 @@
     <meta charset="UTF-8">
     <title>{{ title }}</title>
     <style>
-        @page {
+        @page cover {
+            /* Specific styles for the cover page if needed, like no margins */
+            margin: 0;
+        }
+        @page toc_page {
+             /* Styles for TOC page, maybe different margins or headers/footers */
+             margin: 2cm; /* Example */
+             @top-right { content: normal; } /* Disable default header/footer */
+             @bottom-right { content: normal; }
+             /* ... add custom TOC headers/footers if desired */
+        }
+        @page content_page {
+            /* Default styles for content pages */
             size: a4 portrait;
-            margin: 2cm;
-            @top-right {
+            margin: 2cm; /* Standard margins */
+
+            @top-center {
+                content: "{{ title }}";
+                font-size: 9pt; color: #555; vertical-align: bottom; padding-bottom: 5mm;
+                border-bottom: 0.5pt solid #ccc; width: 100%;
+            }
+            @bottom-left {
+                content: "Generated: {{ date }}"; /* Use the date variable */
+                font-size: 9pt; color: #555; vertical-align: top; padding-top: 5mm;
+            }
+            @bottom-right {
                 content: "Page " counter(page) " of " counter(pages);
-                font-size: 9pt;
-                color: #555;
+                font-size: 9pt; color: #555; vertical-align: top; padding-top: 5mm;
             }
         }
-        
+
         /* General styling */
-        body {
-            font-family: "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.5;
-            font-size: 11pt;
-            color: #333;
-            margin: 0;
-            padding: 0;
-        }
-        
+        body { font-family: "Helvetica Neue", Arial, sans-serif; line-height: 1.5; font-size: 11pt; color: #333; margin: 0; padding: 0; }
+
         /* Cover page */
         .cover-page {
+            page: cover; /* Apply cover page style */
             page-break-after: always;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
+            /* height: 100%; Remove vh units */
+            display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+            /* Use padding or absolute positioning for layout if needed */
+            padding: 2cm 0; /* Example padding */
+            min-height: 25cm; /* Ensure it takes up most of the page */
         }
         
         .cover-logo {
@@ -65,112 +79,69 @@
         }
         
         /* Table of contents */
-        .toc-title {
-            font-size: 18pt;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-top: 2cm;
-            margin-bottom: 1cm;
+        .toc {
+             page: toc_page; /* Apply TOC page style */
+             page-break-after: always;
         }
-        
-        .toc-entry {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.5cm;
-        }
-        
-        .toc-entry a {
-            color: #2980b9;
-            text-decoration: none;
-        }
-        
-        .toc-dots {
-            flex-grow: 1;
-            border-bottom: 1px dotted #bdc3c7;
-            margin: 0 0.5cm;
-        }
-        
+        .toc-title { font-size: 18pt; font-weight: bold; color: #2c3e50; margin-top: 0; margin-bottom: 1cm; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; }
+        .toc-entry { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5cm; font-size: 11pt; }
+        .toc-entry a { color: #2980b9; text-decoration: none; padding-right: 5px; }
+        .toc-dots { flex-grow: 1; border-bottom: 1px dotted #bdc3c7; margin: 0 5px; position: relative; top: -3px; }
+        .toc-page::before { content: target-counter(attr(href url), page); } /* TOC page numbers */
+
         /* Content styling */
         .content {
-            page-break-before: always;
+            page: content_page; /* Apply content page style */
         }
-        
-        h1, h2, h3, h4, h5, h6 {
-            font-family: "Helvetica Neue", Arial, sans-serif;
-            color: #2c3e50;
-            margin-top: 1.2em;
-            margin-bottom: 0.6em;
-            line-height: 1.3;
-        }
-        
-        h1 { 
-            font-size: 20pt; 
-            border-bottom: 1px solid #bdc3c7; 
-            padding-bottom: 5px;
-            margin-top: 0; 
-        }
-        
-        h2 { font-size: 16pt; }
-        h3 { font-size: 14pt; }
-        h4 { font-size: 12pt; }
-        
+
+        h1, h2, h3, h4, h5, h6 { font-family: "Helvetica Neue", Arial, sans-serif; color: #2c3e50; margin-top: 1.2em; margin-bottom: 0.6em; line-height: 1.3; }
+        h1 { font-size: 20pt; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; margin-top: 0; page-break-before: auto; page-break-after: avoid; } /* Adjust page breaks for headings */
+        h2 { font-size: 16pt; page-break-after: avoid; }
+        h3 { font-size: 14pt; page-break-after: avoid; }
+        h4 { font-size: 12pt; page-break-after: avoid; }
         p { margin-bottom: 0.8em; }
-        
-        ul, ol { 
-            padding-left: 25pt; 
-            margin-bottom: 0.8em; 
-        }
-        
+        ul, ol { padding-left: 25pt; margin-bottom: 0.8em; }
         li { margin-bottom: 0.3em; }
-        
-        code {
-            font-family: "Courier New", monospace;
-            background-color: #f4f4f4;
-            padding: 2px 5px;
-            border-radius: 3px;
-            font-size: 0.9em;
-            color: #e74c3c;
-        }
-        
+        code { font-family: "Courier New", monospace; background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; color: #e74c3c; }
         pre {
-            font-family: "Courier New", monospace;
-            background-color: #f4f4f4;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 0.9em;
-            border: 1px solid #ddd;
+            font-family: "Courier New", monospace; background-color: #f4f4f4; padding: 10px; border-radius: 5px;
+            /* Remove overflow-x, use wrap */
+            white-space: pre-wrap; word-wrap: break-word;
+            font-size: 0.9em; border: 1px solid #ddd; page-break-inside: avoid; /* Prevent page breaks inside code blocks */
         }
-        
         a { color: #3498db; text-decoration: none; }
         a:hover { text-decoration: underline; }
-        
         strong, b { font-weight: bold; }
         em, i { font-style: italic; }
-        
-        /* Table styling */
-        table { 
-            border-collapse: collapse; 
-            width: 100%; 
-            margin-bottom: 1em;
-        }
-        
-        th, td { 
-            border: 1px solid #ddd; 
-            padding: 8px; 
-            text-align: left; 
-        }
-        
-        th { 
-            background-color: #f2f2f2; 
-            font-weight: bold; 
-        }
-        
+        table { border-collapse: collapse; width: 100%; margin-bottom: 1em; page-break-inside: avoid; } /* Avoid page breaks inside tables */
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+
         /* Multi-competitor separator */
-        .competitor-section {
+        .competitor-section { /* This might just be a conceptual separator in markdown combining */
+             /* If you use an actual div in the combined markdown: */
             page-break-before: always;
+            margin-top: 2cm; /* Add space before the new competitor */
+        }
+
+        /* Add IDs to link targets */
+        h1 a[id], h2 a[id], h3 a[id], h4 a[id], h5 a[id], h6 a[id] {
+             position: relative;
+             top: -2cm; /* Adjust anchor offset if headers are obscured by fixed elements (usually not needed in print) */
+        }
+
+        /* Improve image handling */
+        img {
+            max-width: 100%;
+            height: auto;
+            page-break-inside: avoid;
+        }
+        
+        /* Ensure code blocks don't overflow */
+        pre code {
+            display: block;
+            overflow-x: auto;
+            white-space: pre-wrap;
         }
     </style>
 </head>
@@ -194,7 +165,7 @@
     
     <!-- Report Content -->
     <div class="content">
-        {{ content }}
+        {{ content|safe }} <!-- Use safe filter if content contains HTML -->
     </div>
 </body>
 </html> 

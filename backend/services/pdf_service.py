@@ -8,6 +8,7 @@ import base64
 from datetime import datetime
 from typing import List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from weasyprint import HTML  # Import WeasyPrint
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +90,8 @@ class PDFService:
         temp_file.close()
         return temp_file.name
     
-    def markdown_to_pdf(self, markdown_text: str, title: str) -> io.BytesIO:
-        """Convert markdown to HTML and return it in a buffer."""
+    def _render_html_report_buffer(self, markdown_text: str, title: str) -> io.BytesIO:
+        """Convert markdown to HTML and return it in a buffer (formerly markdown_to_pdf)."""
         try:
             # Preprocess markdown to add IDs to headers
             processed_markdown = self._preprocess_markdown(markdown_text)
@@ -102,7 +103,7 @@ class PDFService:
             # Convert markdown to HTML
             html_content = markdown.markdown(
                 processed_markdown, 
-                extensions=['extra', 'sane_lists', 'nl2br', 'toc']
+                extensions=['extra', 'sane_lists', 'nl2br', 'toc', 'tables', 'fenced_code']
             )
             
             # Render the HTML template
@@ -126,6 +127,29 @@ class PDFService:
             logger.error(f"Error generating HTML: {e}")
             raise
     
+    def generate_pdf_from_html_buffer(self, html_buffer: io.BytesIO) -> io.BytesIO:
+        """Convert an HTML buffer to a PDF buffer using WeasyPrint."""
+        try:
+            pdf_buffer = io.BytesIO()
+            HTML(file_obj=html_buffer).write_pdf(pdf_buffer)
+            pdf_buffer.seek(0)
+            
+            logger.info("PDF successfully generated from HTML buffer")
+            return pdf_buffer
+            
+        except Exception as e:
+            logger.error(f"Error generating PDF from HTML: {e}")
+            raise
+    
+    def markdown_to_pdf(self, markdown_text: str, title: str) -> io.BytesIO:
+        """Legacy method that now returns HTML - kept for backward compatibility."""
+        return self._render_html_report_buffer(markdown_text, title)
+    
+    def generate_single_report_pdf(self, markdown_text: str, title: str) -> io.BytesIO:
+        """Generate a PDF report from markdown text."""
+        html_buffer = self._render_html_report_buffer(markdown_text, title)
+        return self.generate_pdf_from_html_buffer(html_buffer)
+    
     def combine_markdown_files(self, markdown_files: List[str], competitor_names: List[str]) -> str:
         """Combine multiple markdown files into a single markdown document."""
         combined_markdown = ""
@@ -145,6 +169,12 @@ class PDFService:
             combined_markdown += content
             
         return combined_markdown
+    
+    def generate_combined_report_pdf(self, markdown_files: List[str], competitor_names: List[str], title: str) -> io.BytesIO:
+        """Generate a combined PDF report from multiple markdown files."""
+        combined_markdown = self.combine_markdown_files(markdown_files, competitor_names)
+        html_buffer = self._render_html_report_buffer(combined_markdown, title)
+        return self.generate_pdf_from_html_buffer(html_buffer)
 
 # Create a singleton instance
 pdf_service = PDFService()

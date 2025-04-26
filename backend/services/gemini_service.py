@@ -285,45 +285,44 @@ class GeminiService:
         """Generates an in-depth research report for a competitor using a Pro model."""
         logger.info(f"Starting deep research for: {competitor_name} using model {self.pro_model}")
         company_context = f"for {company_name}" if company_name else ""
-
         prompt = GeminiPrompts.deep_research_competitor(competitor_name, competitor_description, company_name)
 
         try:
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
-            # Use Google Search tool for grounding
             tools = [types.Tool(google_search=types.GoogleSearch())]
-            generate_content_config = types.GenerateContentConfig(
-                tools=tools,
-                response_mime_type="text/plain",
-                temperature=0.65 # Lower temperature for more factual reporting
-            )
+            generate_content_config = types.GenerateContentConfig(tools=tools, response_mime_type="text/plain", temperature=0.65)
 
-            logger.info(f"Generating deep research using model: {self.pro_model}")
+            logger.info(f"Generating deep research using model: {self.pro_model} for {competitor_name}")
             response_text = ""
-            # Use the Pro model
-            for chunk in self.client.models.generate_content_stream(
+            # Consume stream synchronously
+            stream = self.client.models.generate_content_stream(
                 model=self.pro_model,
                 contents=contents,
                 config=generate_content_config,
-            ):
-                # Safety check for response attributes
+            )
+            for chunk in stream:
                 part = getattr(chunk, 'parts', [None])[0]
                 text = getattr(part, 'text', None) if part else None
                 if text:
                     response_text += text
 
-            logger.info(f"Deep research raw content generated for: {competitor_name} {company_context}")
-            # Basic check if response seems valid markdown (starts with #)
-            if response_text and response_text.strip().startswith("#"):
-                return response_text
-            else:
-                logger.warning(f"Deep research for {competitor_name} did not return expected Markdown format. Response snippet: {response_text[:200]}")
-                # Return the raw response wrapped in an error markdown block
-                return f"## Warning: Potential Formatting Issue\n\nThe generated content might not be in the expected Markdown format.\n\n```\n{response_text}\n```"
+            # --- MODIFIED VALIDATION ---
+            if not response_text or len(response_text.strip()) < 100: # Basic check for empty or very short response
+                logger.warning(f"Deep research for {competitor_name} returned empty or unexpectedly short content.")
+                logger.warning(f"Response snippet received: {response_text[:500]}")
+                # Return a specific error message instead of the raw (potentially empty) response
+                return f"## Error\n\nDeep research generation for {competitor_name} failed to produce sufficient content. The response was empty or too short."
+
+            logger.info(f"Deep research raw content generated for: {competitor_name} {company_context} (Length: {len(response_text)})")
+
+            # Optional: More specific check if needed (e.g., must start with '#')
+            if not response_text.strip().startswith("#"):
+                logger.warning(f"Deep research for {competitor_name} did not return expected Markdown format.")
+                return f"## Warning: Potential Formatting Issue\n\nThe generated content might not be in the expected Markdown format.\n\n```\n{response_text[:1000]}\n```"
+
+            return response_text
+            # --- END MODIFICATION ---
 
         except Exception as e:
-            logger.error(f"Error during deep research for {competitor_name} {company_context}: {e}")
-            # Log the full exception traceback for debugging
-            import traceback
-            logger.error(traceback.format_exc())
-            return f"## Error\n\nAn error occurred during deep research generation for {competitor_name}:\n\n```\n{str(e)}\n```" 
+            logger.error(f"Error during deep research API call for {competitor_name} {company_context}: {e}", exc_info=True)
+            return f"## Error\n\nAn error occurred during the API call for deep research generation for {competitor_name}:\n\n```\n{str(e)}\n```" 
