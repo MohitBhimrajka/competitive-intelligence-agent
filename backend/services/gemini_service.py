@@ -34,11 +34,13 @@ class GeminiService:
             json_str = response_text
             
         try:
+            logger.info(f"Attempting to parse JSON: {json_str[:100]}...")
             return json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
             logger.error(f"Response text was: {response_text}")
-            raise
+            # Return empty list instead of raising exception to avoid crashes
+            return []
 
     async def analyze_company(self, company_name: str):
         """Analyze what the company does and generate a friendly message."""
@@ -48,7 +50,12 @@ class GeminiService:
         1. A concise yet informative description (2-3 sentences) of what the company does, including its primary products/services and target audience.
         2. The main industry or sector it operates within.
         3. A friendly, professional, and slightly enthusiastic welcome message (1-2 sentences) tailored for a user from this specific company who is about to use a competitive intelligence platform. **Optionally, integrate a simple, non-offensive, lighthearted pun related to the company's name or main industry or their primary function into this welcome message.**
-        Output ONLY the JSON object with the following exact structure:
+        
+        IMPORTANT: Output ONLY the JSON object with the following exact structure.
+        **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
+        - All property names must be in double quotes
+        - All string values must be in double quotes
+        
         {{
             "description": "...",
             "industry": "...",
@@ -81,7 +88,16 @@ class GeminiService:
             
             # Extract JSON from response
             try:
-                return self._extract_json_from_response(response_text)
+                result = self._extract_json_from_response(response_text)
+                # If result is not a dict, fallback to default response
+                if not isinstance(result, dict):
+                    logger.error(f"Invalid result type from Gemini: {type(result)}")
+                    return {
+                        "description": f"{company_name} is a company we don't have detailed information about.",
+                        "industry": "Unknown",
+                        "welcome_message": f"Welcome, {company_name} user! We're gathering competitive intelligence for you."
+                    }
+                return result
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from response: {response_text}")
                 # Fallback: create a basic structure
@@ -110,8 +126,14 @@ class GeminiService:
         4. 2-3 key weaknesses *relative to the target company or market* (as bullet points).
         Prioritize competitors who are actively making moves in the market or directly compete with {company_name}'s core offerings.
 
-        Output ONLY the JSON object with this exact structure.
-        **Ensure the final output is a single, valid JSON object with correct syntax, including commas between all elements in lists and between key-value pairs within objects.**
+        IMPORTANT: Output ONLY the JSON object with this exact structure.
+        **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
+        - Each object must end with a comma if it's not the last item in the list
+        - All arrays and objects must be properly closed with ] or }}
+        - No trailing commas after the last item in an array or object
+        - All property names must be in double quotes
+        - All string values must be in double quotes
+        
         {{
             "competitors": [
                 {{
@@ -191,7 +213,15 @@ class GeminiService:
             - A 'type' labeled as either "opportunity", "threat", or "trend".
             - A list of 'related_competitors' (names from the provided list) that are most relevant to this insight.
         - If news data is limited, focus insights primarily on the provided competitor strengths/weaknesses and general industry trends.
-        - Output ONLY the JSON object with the following exact structure:
+        
+        IMPORTANT: Output ONLY the JSON object with the following exact structure.
+        **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
+        - Each object must end with a comma if it's not the last item in the list
+        - All arrays and objects must be properly closed with ] or }}
+        - No trailing commas after the last item in an array or object
+        - All property names must be in double quotes
+        - All string values must be in double quotes
+        
         {{
             "insights": [
                 {{
@@ -228,7 +258,9 @@ class GeminiService:
             
             # Extract JSON from response
             try:
-                return self._extract_json_from_response(response_text)
+                result = self._extract_json_from_response(response_text)
+                insights = result.get('insights', []) if isinstance(result, dict) else []
+                return {"insights": insights}
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse JSON from insights response: {response_text}")
                 # Return empty insights list as fallback

@@ -40,11 +40,13 @@ class NewsService:
             json_str = response_text
             
         try:
+            logger.info(f"Attempting to parse JSON: {json_str[:100]}...")
             return json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
             logger.error(f"Response text was: {response_text}")
-            raise
+            # Return empty list instead of raising exception to avoid crashes
+            return []
 
     async def get_news_with_gemini(self, competitor_name: str, days_back: int = 30):
         """
@@ -72,7 +74,14 @@ class NewsService:
 
             Return up to 5-7 of the most relevant items found. If fewer relevant items exist, return all that were found. If no relevant items are found, return an empty array.
 
-            Output ONLY the JSON object with the following exact structure:
+            IMPORTANT: Output ONLY the JSON object with the following exact structure.
+            **YOU MUST ENSURE the final output is a single, valid JSON object with correct syntax:**
+            - Each object must end with a comma if it's not the last item in the list
+            - All arrays and objects must be properly closed with ] or }}
+            - No trailing commas after the last item in an array or object
+            - All property names must be in double quotes
+            - All string values must be in double quotes
+            
             {{
                 "articles": [
                     {{
@@ -114,7 +123,7 @@ class NewsService:
             # Extract JSON from response
             try:
                 result = self._extract_json_from_response(response_text)
-                gemini_articles = result.get('articles', [])
+                gemini_articles = result.get('articles', []) if isinstance(result, dict) else []
                 logger.info(f"Gemini found {len(gemini_articles)} relevant developments for {competitor_name}")
                 return gemini_articles
             except json.JSONDecodeError:
