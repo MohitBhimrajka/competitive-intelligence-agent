@@ -341,6 +341,91 @@ def refresh_company_insights(company_id):
         print(f"ERROR: {e}")
         return None
 
+def ask_rag_question(company_id: str, query: str, timeout: int = 60):
+    """Test the RAG chat endpoint."""
+    print("\n" + "-"*40)
+    print(f"TESTING RAG CHAT for company {company_id}")
+    print(f"Query: {query}")
+    print("-"*40)
+    try:
+        response = requests.post(f"{API_BASE_URL}/api/chat/{company_id}", json={"query": query}, timeout=timeout)
+        print(f"Status code: {response.status_code}")
+
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Answer: {data.get('answer', 'N/A')}")
+            return data.get('answer')
+        else:
+            print(f"Error response: {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"Error asking RAG question: {e}")
+        print(f"ERROR asking RAG: {e}")
+        return None
+
+def check_feature_status(company_id: str):
+    """Check the status of all features for a company."""
+    print("\n" + "-"*40)
+    print(f"CHECKING FEATURE STATUS for company {company_id}")
+    print("-"*40)
+    try:
+        # Get company details
+        response = requests.get(f"{API_BASE_URL}/api/company/{company_id}")
+        if response.status_code != 200:
+            print(f"Error getting company details: {response.status_code}")
+            return False
+            
+        company_data = response.json()
+        print(f"Company: {company_data.get('name')}")
+        print(f"Analysis status: {company_data.get('status', 'unknown')}")
+        
+        # Get competitors with research status
+        response = requests.get(f"{API_BASE_URL}/api/company/{company_id}/competitors")
+        if response.status_code != 200:
+            print(f"Error getting competitors: {response.status_code}")
+            return False
+            
+        comp_data = response.json()
+        competitors = comp_data.get('competitors', [])
+        print(f"Competitors found: {len(competitors)}")
+        
+        for comp in competitors:
+            print(f"\n- {comp.get('name')}:")
+            print(f"  Deep Research: {comp.get('deep_research_status', 'N/A')}")
+            if comp.get('deep_research_status') == 'completed':
+                md_length = len(comp.get('deep_research_markdown', ''))
+                print(f"  Research content: {md_length} characters")
+        
+        # Try a simple RAG query to check if index exists
+        try:
+            response = requests.post(f"{API_BASE_URL}/api/chat/{company_id}", 
+                                    json={"query": "Does the RAG index exist?"}, 
+                                    timeout=30)
+            if response.status_code == 200:
+                print("\nRAG index status: Available")
+            else:
+                print(f"\nRAG index status: Error - {response.text}")
+        except Exception as e:
+            print(f"\nRAG index status: Error checking - {str(e)}")
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error checking feature status: {e}")
+        print(f"ERROR: {e}")
+        return False
+
+def wait_with_progress(seconds, message="Waiting"):
+    """Wait with a progress indicator."""
+    print(f"\n{message} for {seconds} seconds...")
+    chunk = max(1, min(seconds // 10, 5))  # Chunks of 5 seconds max, min 1 second
+    for i in range(0, seconds, chunk):
+        remaining = min(chunk, seconds - i)
+        time.sleep(remaining)
+        percent = min(100, int((i + remaining) / seconds * 100))
+        print(f"Progress: {percent}% ({i + remaining}/{seconds}s)", end="\r")
+    print(" " * 50, end="\r")  # Clear the line
+    print(f"Completed {seconds}s wait.")
+
 def test_full_api_workflow(company_name):
     """Test the full API workflow with granular steps."""
     print("\n" + "="*80)
@@ -401,6 +486,41 @@ def test_full_api_workflow(company_name):
             insights_data = refresh_result
         else:
             print("Failed to get or refresh insights.")
+
+    # --- Step 7: Test RAG Chat ---
+    # RAG index should be built/updated automatically by background tasks.
+    # Give it a bit more time just in case indexing is happening after insights/research.
+    wait_with_progress(10, "Waiting for RAG index update")
+
+    # Ask some questions
+    rag_questions = [
+        f"What is the main industry for {company_name}?",
+    ]
+    
+    if competitors_data and len(competitors_data['competitors']) > 0:
+        first_comp_name = competitors_data['competitors'][0]['name']
+        rag_questions.append(f"Summarize the strengths of {first_comp_name}.")
+        if len(competitors_data['competitors']) > 1:
+            rag_questions.append(f"Tell me about the recent news regarding {first_comp_name}.")
+    
+    rag_questions.append("List the identified competitors.")  # General question
+    
+    # Try each question, with retry if RAG index is still building
+    for question in rag_questions:
+        attempt = 1
+        max_attempts = 2
+        answer = None
+        
+        while attempt <= max_attempts and not answer:
+            answer = ask_rag_question(company_id, question, timeout=90)
+            if not answer and "index is being built" in str(answer).lower():
+                wait_with_progress(30, "RAG index still building")
+                attempt += 1
+            else:
+                break
+
+    # Check final status of all features
+    check_feature_status(company_id)
 
     # Final summary
     print("\n" + "="*80)

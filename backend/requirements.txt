@@ -1,7 +1,7 @@
 # Base packages
 python-dotenv==1.0.0
 pydantic==2.5.2
-typing-extensions>=4.11.0,<5.0.0
+typing-extensions==4.11.0
 python-multipart==0.0.6
 requests==2.31.0
 
@@ -22,10 +22,11 @@ aiohttp>=3.9.0
 # RAG Components
 langchain>=0.1.1,<0.2.0
 langchain-google-genai==0.0.6
-langchain-core>=0.1.28,<0.2.0
+langchain-core>=0.1.52,<0.2.0 # Try pinning lower end slightly higher if needed
+langsmith>=0.1.0,<0.2.0 # Explicitly pin langsmith version range
 langchain-text-splitters==0.0.1
 sentence-transformers==2.2.2
-# faiss-cpu==1.7.4 # Removed - Install via Conda
+# faiss-cpu==1.7.4 # REMOVED - Install via Conda: conda install -c pytorch faiss-cpu
 markdown==3.5
 
 # PDF Generation
