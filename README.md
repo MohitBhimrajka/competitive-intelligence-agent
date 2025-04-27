@@ -28,6 +28,13 @@ Ask questions about your competitors and get answers based on all available data
 - **Example**: `{ "query": "What are the strengths of Competitor X?" }`
 - **RAG-powered**: Uses embeddings and semantic search to find relevant information across all company data, deep research reports, news, and insights
 
+### Streamlit Frontend (New!)
+A simpler, Python-based frontend alternative using Streamlit.
+
+- **Quick setup**: Fewer dependencies and faster to deploy
+- **All features**: Supports the same functionality as the React frontend
+- **Simplified UI**: Clean, functional interface with tabbed navigation
+
 ## Tech Stack
 
 ### Backend
@@ -37,11 +44,12 @@ Ask questions about your competitors and get answers based on all available data
 - Google Gemini API
 - News API
 
-### Frontend
-- React
-- Chakra UI
-- Next.js
-- TypeScript
+### Frontend Options
+
+#### Streamlit Frontend (Alternative)
+- Streamlit
+- Pandas
+- Python Requests
 
 ## Installation
 
@@ -131,7 +139,9 @@ chmod +x start.sh
 ./start.sh
 ```
 
-### Frontend Setup
+### Frontend Setup Options
+
+#### Option 1: React Frontend
 ```bash
 cd frontend
 npm install
@@ -142,6 +152,17 @@ VITE_API_URL=http://localhost:8000
 # Start the development server
 npm run dev
 ```
+
+#### Option 2: Streamlit Frontend (New!)
+```bash
+cd frontend_streamlit
+pip install -r requirements.txt
+
+# Start the Streamlit app
+streamlit run app.py
+```
+
+The Streamlit interface will be available at http://localhost:8501.
 
 ## API Endpoints
 

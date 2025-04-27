@@ -10,8 +10,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from typing import List, Optional
+from dotenv import load_dotenv
 
-from services.database import db # Import your db instance
+from backend.services.database import db # Fixed import path
+
+# Load environment variables
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,7 +29,10 @@ LLM_MODEL_NAME = "gemma3:12b" # Local Ollama model
 
 class RAGService:
     def __init__(self):
-        self.embeddings = GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL_NAME)
+        self.embeddings = GoogleGenerativeAIEmbeddings(
+            model=EMBEDDING_MODEL_NAME,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
         self.llm = OllamaLLM(model=LLM_MODEL_NAME, temperature=0.3)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
