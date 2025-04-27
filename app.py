@@ -7,9 +7,10 @@ import plotly.graph_objects as go
 import requests
 import json
 import asyncio
-import time
-from datetime import datetime
 import os
+import time
+import uuid
+from datetime import datetime
 from dotenv import load_dotenv
 from backend.services.gemini_service import GeminiService
 from backend.services.database import db
@@ -144,6 +145,11 @@ with st.container():
                 with st.spinner("Analyzing company..."):
                     # Get company details
                     company_analysis = asyncio.run(gemini_service.analyze_company(company_name))
+                    
+                    # Ensure the company has an ID (in our case, we need to set it manually for the RAG service)
+                    if "id" not in company_analysis:
+                        company_analysis["id"] = str(uuid.uuid4())
+                    
                     st.session_state.company_data = company_analysis
                     
                     # Get competitors
@@ -407,7 +413,13 @@ if st.session_state.company_data:
                         if company_id:
                             # Create async function for chat processing
                             async def process_chat():
-                                # Update/create RAG index if needed
+                                # Explicitly ensure the RAG index is created/updated 
+                                index_path = rag_service._get_index_path(company_id)
+                                if not os.path.exists(index_path):
+                                    # Make sure to build the index for new companies
+                                    st.info("Building knowledge index for this company. This may take a moment...")
+                                
+                                # Update/create RAG index 
                                 await rag_service.update_rag_index(company_id)
                                 
                                 # Get response using RAG
@@ -425,7 +437,8 @@ if st.session_state.company_data:
                         else:
                             st.error("Please analyze a company first before using the chat feature.")
                     except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
+                        st.error(f"An error occurred during RAG processing: {str(e)}")
+                        st.info("Try asking a different question or analyzing the company again.")
 
 else:
     # Display welcome message when no company is selected
