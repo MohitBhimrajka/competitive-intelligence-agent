@@ -250,6 +250,164 @@ def display_loading_animation():
             time.sleep(0.01)
             progress_bar.progress(i)
 
+def generate_report_html(company_details, competitors, news, insights):
+    """Generate an HTML report with all analysis data."""
+    if not company_details:
+        return None
+    
+    html = f"""
+    <html>
+    <head>
+        <title>Competitive Intelligence Report - {company_details['name']}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.5; }}
+            h1 {{ color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }}
+            h2 {{ color: #3498db; margin-top: 30px; }}
+            h3 {{ color: #2980b9; }}
+            .company-info {{ background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+            .competitor {{ background-color: #f5f5f5; padding: 15px; margin-bottom: 15px; border-radius: 5px; }}
+            .strengths {{ color: #27ae60; }}
+            .weaknesses {{ color: #e74c3c; }}
+            .news-item {{ border-left: 3px solid #3498db; padding-left: 10px; margin-bottom: 10px; }}
+            .insight {{ background-color: #ebf5fb; padding: 10px; margin-bottom: 10px; border-radius: 5px; }}
+            .news-date {{ color: #7f8c8d; font-size: 0.9em; }}
+            .news-source {{ color: #7f8c8d; font-size: 0.9em; }}
+            .news-title {{ font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <h1>Competitive Intelligence Report</h1>
+        
+        <div class="company-info">
+            <h2>{company_details['name']}</h2>
+            <p><strong>Industry:</strong> {company_details.get('industry', 'N/A')}</p>
+            <p>{company_details.get('description', 'No description available.')}</p>
+        </div>
+        
+        <h2>Competitor Analysis</h2>
+    """
+    
+    # Add competitors
+    if competitors and competitors.get("competitors"):
+        for comp in competitors["competitors"]:
+            html += f"""
+            <div class="competitor">
+                <h3>{comp["name"]}</h3>
+                <p>{comp.get('description', 'No description available.')}</p>
+                
+                <h4 class="strengths">Strengths</h4>
+                <ul>
+            """
+            
+            strengths = comp.get("strengths", [])
+            if strengths:
+                for strength in strengths:
+                    html += f"<li>{strength}</li>"
+            else:
+                html += "<li>No strengths identified.</li>"
+            
+            html += """
+                </ul>
+                
+                <h4 class="weaknesses">Weaknesses</h4>
+                <ul>
+            """
+            
+            weaknesses = comp.get("weaknesses", [])
+            if weaknesses:
+                for weakness in weaknesses:
+                    html += f"<li>{weakness}</li>"
+            else:
+                html += "<li>No weaknesses identified.</li>"
+            
+            html += """
+                </ul>
+            </div>
+            """
+    else:
+        html += "<p>No competitors identified.</p>"
+    
+    # Add insights
+    html += "<h2>Strategic Insights</h2>"
+    
+    if insights and insights.get("insights"):
+        for insight in insights["insights"]:
+            html += f"""
+            <div class="insight">
+                <p>{insight["content"]}</p>
+                <p class="news-source">Source: {insight.get("source", "Unknown")}</p>
+            </div>
+            """
+    else:
+        html += "<p>No insights generated.</p>"
+    
+    # Add news by competitor
+    html += "<h2>News and Developments</h2>"
+    
+    if news and len(news) > 0:
+        # Group news by competitor
+        for competitor_name, articles in news.items():
+            if articles:
+                html += f"<h3>News about {competitor_name}</h3>"
+                
+                # Sort articles by date (most recent first)
+                try:
+                    sorted_articles = sorted(articles, key=lambda x: x.get("published_at", ""), reverse=True)
+                except:
+                    sorted_articles = articles
+                
+                for article in sorted_articles:
+                    html += f"""
+                    <div class="news-item">
+                        <p class="news-title">{article.get('title', 'No title')}</p>
+                        <p class="news-source">Source: {article.get('source', 'Unknown')} | Published: {article.get('published_at', 'Unknown date')}</p>
+                        <p>{article.get('content', 'No content available.')[:300]}...</p>
+                    """
+                    
+                    if "url" in article:
+                        html += f'<p><a href="{article["url"]}" target="_blank">Read original article</a></p>'
+                    
+                    html += "</div>"
+    else:
+        html += "<p>No news articles collected.</p>"
+    
+    html += """
+    </body>
+    </html>
+    """
+    
+    return html
+
+def get_report_download_link(company_details, competitors, news, insights):
+    """Generate a download link for the report PDF."""
+    # Generate HTML report
+    html = generate_report_html(company_details, competitors, news, insights)
+    if not html:
+        return None
+    
+    # Convert HTML to PDF using pdfkit (if available) or use a fallback method with HTML download
+    try:
+        import pdfkit
+        from io import BytesIO
+        import base64
+        
+        # Try to generate PDF
+        pdf = pdfkit.from_string(html, False)
+        b64 = base64.b64encode(pdf).decode()
+        company_name = company_details['name'].replace(" ", "_")
+        filename = f"{company_name}_Competitive_Intelligence_Report.pdf"
+        
+        return f'<a href="data:application/pdf;base64,{b64}" download="{filename}" style="text-decoration:none; color:#4e8df5; font-weight:bold;"><i class="fas fa-file-pdf"></i> Download Complete Report (PDF)</a>'
+    except:
+        # Fallback to HTML download if pdfkit is not available
+        import base64
+        
+        b64 = base64.b64encode(html.encode()).decode()
+        company_name = company_details['name'].replace(" ", "_")
+        filename = f"{company_name}_Competitive_Intelligence_Report.html"
+        
+        return f'<a href="data:text/html;base64,{b64}" download="{filename}" style="text-decoration:none; color:#4e8df5; font-weight:bold;"><i class="fas fa-file-code"></i> Download Complete Report (HTML)</a>'
+
 # Initialize session state
 if 'company_id' not in st.session_state:
     st.session_state.company_id = None
@@ -267,6 +425,8 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'deep_research_status' not in st.session_state:
     st.session_state.deep_research_status = {}
+if 'report_ready' not in st.session_state:
+    st.session_state.report_ready = False
 
 # App Header
 st.title("🔍 Competitive Intelligence Agent")
@@ -414,8 +574,31 @@ else:
                     st.session_state.insights = insights_data
                 
                 st.success("Data refreshed successfully!")
+                # Set report ready flag if all data is available
+                if (st.session_state.company_details and st.session_state.competitors and 
+                    st.session_state.news and st.session_state.insights):
+                    st.session_state.report_ready = True
+        
+        # Download report option (visible only when report is ready)
+        if (st.session_state.company_details and st.session_state.competitors and 
+            st.session_state.news and st.session_state.insights):
+            st.session_state.report_ready = True
+            
+        if st.session_state.report_ready:
+            st.markdown("---")
+            st.markdown("### 📊 Analysis Report")
+            report_link = get_report_download_link(
+                st.session_state.company_details,
+                st.session_state.competitors,
+                st.session_state.news,
+                st.session_state.insights
+            )
+            if report_link:
+                st.markdown(report_link, unsafe_allow_html=True)
+                st.markdown("Get a complete report with all competitor analysis, news, and insights in one document.")
         
         # Reset button
+        st.markdown("---")
         if st.button("Start New Analysis"):
             st.session_state.clear()
             st.experimental_rerun()
@@ -491,46 +674,55 @@ else:
             
             # Visualization - Competitor Comparison
             if st.session_state.competitors and len(st.session_state.competitors.get("competitors", [])) > 0:
-                st.markdown("### Competitor Analysis")
+                st.markdown("### Competitor News Analysis")
                 
-                # Create a dataframe for competitor analysis
+                # Create a dataframe for competitor news analysis
                 competitor_data = []
-                for comp in st.session_state.competitors["competitors"]:
-                    strengths_count = len(comp.get("strengths", [])) if comp.get("strengths") else 0
-                    weaknesses_count = len(comp.get("weaknesses", [])) if comp.get("weaknesses") else 0
-                    
-                    competitor_data.append({
-                        "name": comp["name"],
-                        "strengths_count": strengths_count,
-                        "weaknesses_count": weaknesses_count
-                    })
+                
+                # Check if news data is available
+                if st.session_state.news and len(st.session_state.news) > 0:
+                    # Count news articles for each competitor
+                    for comp in st.session_state.competitors["competitors"]:
+                        news_count = 0
+                        comp_name = comp["name"]
+                        
+                        # Find news count for this competitor
+                        if comp_name in st.session_state.news:
+                            news_count = len(st.session_state.news[comp_name])
+                        
+                        competitor_data.append({
+                            "name": comp_name,
+                            "news_count": news_count
+                        })
+                else:
+                    # Create empty data if no news available
+                    for comp in st.session_state.competitors["competitors"]:
+                        competitor_data.append({
+                            "name": comp["name"],
+                            "news_count": 0
+                        })
                 
                 comp_df = pd.DataFrame(competitor_data)
                 
-                # Bar chart for strengths vs weaknesses
+                # Sort by news count descending
+                comp_df = comp_df.sort_values(by="news_count", ascending=False)
+                
+                # Bar chart for news count
                 if not comp_df.empty:
                     fig = go.Figure()
                     
-                    # Add traces for strengths and weaknesses
+                    # Add trace for news count
                     fig.add_trace(go.Bar(
                         x=comp_df["name"],
-                        y=comp_df["strengths_count"],
-                        name="Strengths",
-                        marker_color="#4CAF50"
-                    ))
-                    
-                    fig.add_trace(go.Bar(
-                        x=comp_df["name"],
-                        y=comp_df["weaknesses_count"],
-                        name="Weaknesses",
-                        marker_color="#F44336"
+                        y=comp_df["news_count"],
+                        name="News Articles",
+                        marker_color="#3498db"
                     ))
                     
                     fig.update_layout(
-                        title="Strengths vs. Weaknesses by Competitor",
+                        title="News Articles Collected per Competitor",
                         xaxis_title="Competitor",
-                        yaxis_title="Count",
-                        barmode="group",
+                        yaxis_title="Number of Articles",
                         legend=dict(
                             orientation="h",
                             yanchor="bottom",
@@ -541,6 +733,9 @@ else:
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
+                    
+                    if sum(comp_df["news_count"]) == 0:
+                        st.info("No news articles have been collected yet for these competitors.")
             
             # Recent News
             if st.session_state.news and len(st.session_state.news) > 0:

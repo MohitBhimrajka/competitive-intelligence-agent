@@ -39,14 +39,14 @@ A modern Streamlit interface for the Competitive Intelligence Agent backend that
 
 3. Make sure the backend API is running:
    ```
-   cd backend
-   python -m uvicorn main:app --reload
+cd backend
+python -m uvicorn main:app --reload
    ```
 
 4. Run the Streamlit app:
    ```
-   streamlit run app.py
-   ```
+streamlit run app.py
+```
 
 ## Usage
 
