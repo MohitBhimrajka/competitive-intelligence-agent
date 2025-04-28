@@ -190,8 +190,19 @@ def ask_rag_question(company_id, query):
         )
         if response.status_code == 200:
             return response.json().get("answer")
+        elif response.status_code == 500:
+            # Check if the error is related to the RAG index being built
+            error_text = response.json().get("detail", "").lower()
+            if "index" in error_text and "built" in error_text:
+                return "The RAG index is still being built. Please try again in a moment."
+            else:
+                return f"Error: {response.json().get('detail', 'Unknown server error')}"
         else:
             return f"Error: {response.text}"
+    except requests.exceptions.Timeout:
+        return "The request timed out. The server might be processing a lot of data. Please try again later."
+    except requests.exceptions.ConnectionError:
+        return "Connection error. Please ensure the backend server is running."
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -803,13 +814,31 @@ else:
             st.subheader("Ask About Your Competitors")
             
             # Display chat history
-            for i, (query, response) in enumerate(st.session_state.chat_history):
-                st.markdown(f"**You**: {query}")
-                st.markdown(f"**AI**: {response}")
-                st.markdown("---")
+            chat_container = st.container()
+            with chat_container:
+                for i, (query, response) in enumerate(st.session_state.chat_history):
+                    st.markdown(f"**You**: {query}")
+                    
+                    # Check if the response contains an error message
+                    if response.startswith("Error:") or "error" in response.lower() or "index is still being built" in response.lower():
+                        st.error(response)
+                        # Add a retry button for failed queries
+                        if st.button(f"Retry this question", key=f"retry_{i}"):
+                            with st.spinner("Regenerating response..."):
+                                retry_response = ask_rag_question(st.session_state.company_id, query)
+                                # Update the response in chat history
+                                st.session_state.chat_history[i] = (query, retry_response)
+                                st.experimental_rerun()
+                    else:
+                        st.markdown(f"**AI**: {response}")
+                    
+                    st.markdown("---")
             
-            # Chat input
-            user_query = st.text_input("Ask a question:", key="chat_input")
+            # Chat input - store in session state to maintain value during reruns
+            if "chat_input" not in st.session_state:
+                st.session_state.chat_input = ""
+                
+            user_query = st.text_input("Ask a question:", value=st.session_state.chat_input, key="chat_input_field")
             
             # Suggested questions
             st.markdown("**Suggested Questions:**")
@@ -838,18 +867,30 @@ else:
             for i, question in enumerate(suggested_questions):
                 col_idx = i % 3
                 if cols[col_idx].button(question, key=f"suggest_{i}"):
-                    # Set the question in the chat input and submit it
-                    user_query = question
+                    # Set the question in the session state
+                    st.session_state.chat_input = question
+                    st.experimental_rerun()
             
-            # Send button
-            if user_query:
-                if st.button("Send", type="primary"):
-                    with st.spinner("Generating response..."):
-                        response = ask_rag_question(st.session_state.company_id, user_query)
-                        # Add to chat history
-                        st.session_state.chat_history.append((user_query, response))
-                        # Clear input
-                        st.experimental_rerun()
+            # Send button and clear button in columns
+            col1, col2 = st.columns([1, 5])
+            
+            with col1:
+                send_pressed = st.button("Send", type="primary")
+            
+            with col2:
+                if st.button("Clear History"):
+                    st.session_state.chat_history = []
+                    st.session_state.chat_input = ""
+                    st.experimental_rerun()
+            
+            if send_pressed and user_query:
+                with st.spinner("Generating response..."):
+                    response = ask_rag_question(st.session_state.company_id, user_query)
+                    # Add to chat history
+                    st.session_state.chat_history.append((user_query, response))
+                    # Clear input
+                    st.session_state.chat_input = ""
+                    st.experimental_rerun()
     else:
         # Still waiting for data
         st.markdown("### Loading Data")

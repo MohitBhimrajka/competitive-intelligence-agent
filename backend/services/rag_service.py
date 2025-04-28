@@ -224,10 +224,7 @@ class RAGService:
             loop = asyncio.get_running_loop()
             vector_store = await loop.run_in_executor(
                 None,
-                FAISS.load_local,
-                index_path,
-                self.embeddings,
-                True # allow_dangerous_deserialization=True
+                lambda: FAISS.load_local(index_path, self.embeddings, allow_dangerous_deserialization=True)
             )
             retriever = vector_store.as_retriever(search_kwargs={"k": 5}) # Retrieve top 5 relevant chunks
             logger.debug(f"Retriever created for company {company_id}")
