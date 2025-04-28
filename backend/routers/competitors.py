@@ -15,7 +15,7 @@ import json # Import json for Supervity payload
 
 from services.database import db
 from services.gemini_service import GeminiService
-from services.pdf_service import pdf_service
+from services.pdf_service import pdf_service, DEFAULT_AGENT_DESCRIPTION
 from services.google_drive_service import GoogleDriveService # Import the new service
 
 router = APIRouter()
@@ -500,8 +500,10 @@ async def run_email_report_task(company_id: str, user_email: str):
     Background task: Generates combined PDF, uploads to GDrive, calls Supervity.
     """
     logger.info(f"Starting email report task for Company ID: {company_id}, Email: {user_email}")
-    pdf_buffer = None # Initialize
+    buffer = None # Initialize
     temp_files = [] # Initialize list for temp files
+    report_format = "pdf" # Default format
+    local_file_path = None # For storing local file path
 
     try:
         # 1. Fetch Company and Competitors
@@ -544,36 +546,97 @@ async def run_email_report_task(company_id: str, user_email: str):
         report_subtitle = f"Analysis covering {len(competitor_names)} key competitor(s)"
         current_date_str = datetime.now().strftime('%Y%m%d_%H%M')
         safe_company_name = re.sub(r'[^\w\-]+', '_', company_name)
-        pdf_filename = f"{safe_company_name}_Competitor_Report_{current_date_str}.pdf"
+        
+        try:
+            logger.info(f"[Email Task {company_id}] Generating combined PDF report")
+            buffer = pdf_service.generate_combined_report_pdf(
+                temp_files, # Pass the list of paths
+                competitor_names,
+                title=report_internal_title
+            )
+            filename = f"{safe_company_name}_Competitor_Report_{current_date_str}.pdf"
+            logger.info(f"[Email Task {company_id}] Combined PDF generated successfully.")
+        except Exception as pdf_error:
+            logger.error(f"[Email Task {company_id}] PDF generation failed: {pdf_error}. Falling back to HTML.")
+            
+            # Try to generate HTML instead
+            try:
+                combined_markdown = pdf_service.combine_markdown_files(temp_files, competitor_names)
+                # Render HTML
+                html_buffer = pdf_service._render_html_report_buffer(
+                    markdown_text=combined_markdown,
+                    report_title=report_internal_title,
+                    report_subtitle=report_subtitle,
+                    agent_description=DEFAULT_AGENT_DESCRIPTION
+                )
+                buffer = html_buffer
+                report_format = "html"
+                filename = f"{safe_company_name}_Competitor_Report_{current_date_str}.html"
+                logger.info(f"[Email Task {company_id}] Generated HTML report as fallback.")
+            except Exception as html_error:
+                logger.error(f"[Email Task {company_id}] HTML generation also failed: {html_error}")
+                raise
 
-        logger.info(f"[Email Task {company_id}] Generating combined PDF: {pdf_filename}")
-        pdf_buffer = pdf_service.generate_combined_report_pdf(
-            temp_files, # Pass the list of paths
-            competitor_names,
-            title=report_internal_title
-        )
-        logger.info(f"[Email Task {company_id}] Combined PDF generated successfully.")
+        # Save a local copy of the file
+        try:
+            local_file_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reports')
+            os.makedirs(local_file_dir, exist_ok=True)
+            local_file_path = os.path.join(local_file_dir, filename)
+            
+            buffer.seek(0)
+            with open(local_file_path, 'wb') as local_file:
+                local_file.write(buffer.read())
+            
+            buffer.seek(0)  # Reset for further use
+            logger.info(f"[Email Task {company_id}] Saved local copy to {local_file_path}")
+        except Exception as save_error:
+            logger.error(f"[Email Task {company_id}] Error saving local file: {save_error}")
+            local_file_path = None
 
         # 4. Upload to Google Drive
-        if not google_drive_service:
-             logger.error(f"[Email Task {company_id}] Google Drive service not initialized. Cannot upload.")
-             # Clean up temp files even on failure
-             raise Exception("Google Drive service unavailable.") # Raise to trigger finally block
+        drive_link = None
+        if google_drive_service:
+            try:
+                logger.info(f"[Email Task {company_id}] Uploading {report_format.upper()} '{filename}' to Google Drive...")
+                
+                # Use the correct MIME type based on the format
+                mime_type = "application/pdf" if report_format == "pdf" else "text/html"
+                drive_link = google_drive_service.upload_file(buffer, filename, mime_type=mime_type)
 
-        logger.info(f"[Email Task {company_id}] Uploading PDF '{pdf_filename}' to Google Drive...")
-        drive_link = google_drive_service.upload_pdf(pdf_buffer, pdf_filename)
-
-        if not drive_link:
-            logger.error(f"[Email Task {company_id}] Failed to upload PDF to Google Drive.")
-            raise Exception("Google Drive upload failed.") # Raise to trigger finally block
-
-        logger.info(f"[Email Task {company_id}] PDF uploaded to Google Drive. Link: {drive_link}")
+                if not drive_link:
+                    logger.error(f"[Email Task {company_id}] Failed to upload {report_format.upper()} to Google Drive.")
+                    # Fall back to local file path
+                    if local_file_path:
+                        drive_link = f"file://{local_file_path}" 
+                        logger.info(f"[Email Task {company_id}] Using local file path as fallback: {drive_link}")
+                    else:
+                        raise Exception("Google Drive upload failed and no local file available.")
+                else:
+                    logger.info(f"[Email Task {company_id}] {report_format.upper()} uploaded to Google Drive. Link: {drive_link}")
+            except Exception as upload_error:
+                logger.error(f"[Email Task {company_id}] Drive upload error: {upload_error}")
+                # Fall back to local file path
+                if local_file_path:
+                    drive_link = f"file://{local_file_path}" 
+                    logger.info(f"[Email Task {company_id}] Using local file path as fallback: {drive_link}")
+                else:
+                    raise Exception("Google Drive upload failed and no local file available.")
+        else:
+            logger.error(f"[Email Task {company_id}] Google Drive service not initialized.")
+            # Fall back to local file path
+            if local_file_path:
+                drive_link = f"file://{local_file_path}" 
+                logger.info(f"[Email Task {company_id}] Using local file path as fallback: {drive_link}")
+            else:
+                raise Exception("Google Drive service unavailable and no local file available.")
 
         # 5. Construct Supervity Payload
         supervity_input_payload = {
             "company_name": company_name,
             "sender_email": user_email,
             "file_link": drive_link,
+            "file_format": report_format.upper(),  # Add format information
+            "local_file_path": local_file_path,  # Add local file path if available
             "Agent_Status": "answered" # Add the requested status
         }
 
@@ -590,22 +653,27 @@ async def run_email_report_task(company_id: str, user_email: str):
         }
 
         # 6. Call Supervity API
-        logger.info(f"[Email Task {company_id}] Sending request to Supervity API...")
-        try:
-            response = requests.post(
-                SUPERVITY_API_URL,
-                headers=headers,
-                json=supervity_request_body, # Send as JSON
-                timeout=30 # Add a timeout
-            )
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            logger.info(f"[Email Task {company_id}] Supervity API call successful. Status: {response.status_code}, Response: {response.text[:200]}...")
+        if SUPERVITY_API_TOKEN and SUPERVITY_ORG_ID:
+            logger.info(f"[Email Task {company_id}] Sending request to Supervity API...")
+            try:
+                response = requests.post(
+                    SUPERVITY_API_URL,
+                    headers=headers,
+                    json=supervity_request_body, # Send as JSON
+                    timeout=30 # Add a timeout
+                )
+                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                logger.info(f"[Email Task {company_id}] Supervity API call successful. Status: {response.status_code}, Response: {response.text[:200]}...")
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"[Email Task {company_id}] Error calling Supervity API: {e}", exc_info=True)
-            if e.response is not None:
-                 logger.error(f"Supervity Error Response: {e.response.text}")
-            # Decide if you need to retry or notify someone
+            except requests.exceptions.RequestException as e:
+                logger.error(f"[Email Task {company_id}] Error calling Supervity API: {e}", exc_info=True)
+                if e.response is not None:
+                     logger.error(f"Supervity Error Response: {e.response.text}")
+                # Not raising an exception here as we've already generated the file
+                logger.info(f"[Email Task {company_id}] Report was generated but email delivery failed. Local copy: {local_file_path}")
+        else:
+            logger.warning(f"[Email Task {company_id}] Supervity API not configured. Report generated but not emailed.")
+            logger.info(f"[Email Task {company_id}] Report available at: {drive_link or local_file_path}")
 
     except Exception as e:
         logger.error(f"[Email Task {company_id}] An error occurred: {e}", exc_info=True)
@@ -622,5 +690,5 @@ async def run_email_report_task(company_id: str, user_email: str):
             except Exception as unlink_e:
                 logger.error(f"Error removing temp file {temp_file_path}: {unlink_e}")
         # Close buffer if it was created
-        if pdf_buffer:
-            pdf_buffer.close() 
+        if buffer:
+            buffer.close() 

@@ -8,7 +8,7 @@ import base64
 from datetime import datetime
 from typing import List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML, CSS # Import CSS for potential future use
+from weasyprint import HTML, CSS  # Remove FontConfiguration import
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +165,94 @@ class PDFService:
         """Convert an HTML buffer to a PDF buffer using WeasyPrint."""
         try:
             pdf_buffer = io.BytesIO()
-            # Pass the HTML object to WeasyPrint
-            html = HTML(file_obj=html_buffer)
-            html.write_pdf(pdf_buffer) # No need for stylesheets argument unless adding separate CSS files
+            
+            # Get base URL for proper resource loading
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # Create a custom CSS to handle various rendering issues
+            css_string = '''
+                /* Fix for overflow-x warning */
+                pre {
+                    white-space: pre-wrap !important;
+                    word-wrap: break-word !important;
+                }
+                
+                /* Ensure anchors work correctly */
+                a[id] {
+                    display: block;
+                    position: relative;
+                    visibility: visible;
+                    top: -2em;
+                    height: 2em;
+                }
+                
+                /* Improve table styling */
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 1em 0;
+                }
+                th, td {
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: left;
+                }
+                th {
+                    background-color: #f2f2f2;
+                }
+                
+                /* Handle page breaks better */
+                h1, h2, h3 {
+                    page-break-after: avoid;
+                }
+                table, figure, img {
+                    page-break-inside: avoid;
+                }
+                
+                /* Fix TOC page linking */
+                .toc-entry a {
+                    text-decoration: none;
+                    color: #000;
+                }
+            '''
+            css = CSS(string=css_string)
+            
+            # Pass the HTML object to WeasyPrint with proper configuration
+            html = HTML(file_obj=html_buffer, base_url=base_dir)
+            
+            try:
+                # Try with a simple approach first
+                html.write_pdf(
+                    pdf_buffer,
+                    stylesheets=[css]
+                )
+            except TypeError as type_error:
+                # If that fails, try the most basic approach
+                logger.warning(f"PDF generation error: {type_error}. Trying minimal arguments...")
+                html.write_pdf(pdf_buffer)
+            
             pdf_buffer.seek(0)
-
             logger.info("PDF successfully generated from HTML buffer")
             return pdf_buffer
 
         except Exception as e:
-            logger.error(f"Error generating PDF from HTML: {e}", exc_info=True) # Added exc_info
+            logger.error(f"Error generating PDF from HTML: {e}", exc_info=True)
+            # For debugging, write the HTML to a file
+            try:
+                html_buffer.seek(0)
+                debug_html = html_buffer.read().decode('utf-8')
+                debug_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                         'debug_report.html')
+                with open(debug_path, 'w', encoding='utf-8') as f:
+                    f.write(debug_html)
+                logger.info(f"Debug HTML written to {debug_path}")
+                
+                # If PDF generation fails completely, return the HTML buffer as a fallback
+                html_buffer.seek(0)
+                return html_buffer
+            except Exception as debug_err:
+                logger.error(f"Error saving debug HTML: {debug_err}")
+            
             raise
 
     # Kept title for backward compatibility if called directly, but prefer report_title

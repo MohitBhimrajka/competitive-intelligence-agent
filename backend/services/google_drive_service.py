@@ -50,33 +50,53 @@ class GoogleDriveService:
             logger.error(f"Error loading service account credentials: {e}", exc_info=True)
             return None
 
-    def upload_pdf(self, pdf_buffer: io.BytesIO, filename: str) -> Optional[str]:
-        """Uploads a PDF buffer to Google Drive and returns the shareable link."""
+    def upload_file(self, file_buffer: io.BytesIO, filename: str, mime_type: str = 'application/pdf') -> Optional[str]:
+        """
+        Uploads a file buffer to Google Drive and returns the shareable link.
+        
+        Args:
+            file_buffer: BytesIO buffer containing the file data
+            filename: Name to give the file in Google Drive
+            mime_type: MIME type of the file (default: 'application/pdf')
+            
+        Returns:
+            Optional[str]: Web view link to the uploaded file, or None if upload fails
+        """
         if not self.service:
             logger.error("Google Drive service not available for upload.")
             return None
-        if not pdf_buffer or pdf_buffer.getbuffer().nbytes == 0:
-             logger.error("PDF buffer is empty, cannot upload.")
+        if not file_buffer or file_buffer.getbuffer().nbytes == 0:
+             logger.error(f"File buffer for {filename} is empty, cannot upload.")
              return None
 
         try:
             # Reset buffer position
-            pdf_buffer.seek(0)
+            file_buffer.seek(0)
 
             file_metadata = {
                 'name': filename,
-                'mimeType': 'application/pdf'
+                'mimeType': mime_type
             }
+            
             # Add parent folder if specified
+            use_root_dir = True
             if DRIVE_FOLDER_ID:
-                 file_metadata['parents'] = [DRIVE_FOLDER_ID]
-                 logger.info(f"Uploading '{filename}' to Drive folder ID: {DRIVE_FOLDER_ID}")
-            else:
-                 logger.info(f"Uploading '{filename}' to Drive root (no folder ID specified).")
+                try:
+                    # Check if folder exists before trying to use it
+                    folder = self.service.files().get(fileId=DRIVE_FOLDER_ID, fields="id,name").execute()
+                    if folder and folder.get('id'):
+                        file_metadata['parents'] = [DRIVE_FOLDER_ID]
+                        use_root_dir = False
+                        logger.info(f"Uploading '{filename}' to Drive folder: {folder.get('name', DRIVE_FOLDER_ID)}")
+                except HttpError as folder_error:
+                    logger.warning(f"Specified folder ID {DRIVE_FOLDER_ID} not found or not accessible: {folder_error}. Falling back to root directory.")
+            
+            if use_root_dir:
+                logger.info(f"Uploading '{filename}' to Drive root directory.")
 
-            media = MediaIoBaseUpload(pdf_buffer, mimetype='application/pdf', resumable=True)
+            media = MediaIoBaseUpload(file_buffer, mimetype=mime_type, resumable=True)
 
-            logger.info(f"Starting Google Drive upload for: {filename}")
+            logger.info(f"Starting Google Drive upload for: {filename} (MIME type: {mime_type})")
             file = self.service.files().create(
                 body=file_metadata,
                 media_body=media,
@@ -115,6 +135,11 @@ class GoogleDriveService:
         except Exception as e:
             logger.error(f"An unexpected error occurred during Google Drive upload: {e}", exc_info=True)
             return None
+
+    # Maintain backward compatibility by keeping upload_pdf as a wrapper
+    def upload_pdf(self, pdf_buffer: io.BytesIO, filename: str) -> Optional[str]:
+        """Uploads a PDF buffer to Google Drive (wrapper for upload_file)."""
+        return self.upload_file(pdf_buffer, filename, mime_type='application/pdf')
 
 # You can create a singleton instance if needed
 # google_drive_service = GoogleDriveService() 
