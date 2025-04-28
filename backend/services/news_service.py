@@ -31,7 +31,7 @@ class NewsService:
                  logger.error("GOOGLE_API_KEY not set. Cannot initialize Gemini client for News Service.")
                  raise ValueError("GOOGLE_API_KEY environment variable not set.")
             self.gemini_client = genai.Client(api_key=api_key)
-            self.model = "gemini-2.5-flash-preview-04-17" # Or your chosen model
+            self.model = "gemini-2.0-flash-001" # Or your chosen model
 
             logger.info("Gemini client for News Service initialized")
         except Exception as e:

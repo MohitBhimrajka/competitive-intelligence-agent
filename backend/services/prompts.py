@@ -17,10 +17,9 @@ class GeminiPrompts:
            - Unique value proposition
            - Business model (if discernible)
         2. The main industry or sector it operates within, including any sub-sectors or niches.
-        3. A friendly, professional, and slightly enthusiastic welcome message (1-2 sentences) that:
-           - Acknowledges their industry position
+        3. A professional, and slightly enthusiastic welcome message (1 sentence) that:
            - References their core business
-           - Optionally includes a lighthearted, industry-relevant pun (it is preffered if you include one, it can be on their company name or industry or primary buisness segment)
+           - includes a funny-pun on their company name or industry or primary buisness segment
            - Maintains professional tone while being engaging
 
         If you cannot find specific information about the company, provide a response based on the company name and any available context, clearly indicating any assumptions made.

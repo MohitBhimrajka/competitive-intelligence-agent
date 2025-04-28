@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, JSONResponse
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
@@ -10,16 +10,34 @@ import tempfile
 import markdown
 import asyncio  # Import asyncio
 import re  # Import regex
+import requests # Import requests for Supervity call
+import json # Import json for Supervity payload
 
 from services.database import db
 from services.gemini_service import GeminiService
 from services.pdf_service import pdf_service
+from services.google_drive_service import GoogleDriveService # Import the new service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Initialize Gemini Service
+# Initialize Services
 gemini_service = GeminiService()
+# Initialize Drive Service
+try:
+     google_drive_service = GoogleDriveService()
+except Exception as drive_init_err:
+     logger.error(f"Fatal Error: Could not initialize GoogleDriveService: {drive_init_err}", exc_info=True)
+     # Depending on requirements, you might want the app to fail startup here
+     # For now, we'll let it run but log the error. Uploads will fail.
+     google_drive_service = None
+
+# --- Supervity Config (Move to .env ideally) ---
+SUPERVITY_API_URL = "https://api.supervity.ai/botapi/draftSkills/v2/execute/"
+SUPERVITY_API_TOKEN = os.getenv("SUPERVITY_API_TOKEN", "YOUR_SUPERVITY_API_TOKEN") # Get from .env
+SUPERVITY_ORG_ID = os.getenv("SUPERVITY_ORG_ID", "YOUR_SUPERVITY_ORG_ID") # Get from .env
+SUPERVITY_AGENT_ID = "cm42n7m0j000ahpqwcwgsvpew"
+SUPERVITY_SKILL_ID = "dn3xqylt4ncr0i0jywco40fb"
 
 class Competitor(BaseModel):
     id: int
@@ -441,3 +459,168 @@ async def run_multiple_deep_research_concurrently(competitor_ids: List[str], com
             logger.error(f"[Multi Research Task] Error triggering RAG index update for company {company_id_for_rag}: {rag_e}", exc_info=True)
     else:
         logger.warning("[Multi Research Task] No company ID found for triggering RAG update.") 
+
+# --- NEW Model for Email Report Request ---
+class EmailReportRequest(BaseModel):
+    company_id: str
+    user_email: str
+
+# --- NEW Endpoint for Email Report ---
+@router.post("/report/email", status_code=202)
+async def email_combined_report(request: EmailReportRequest, background_tasks: BackgroundTasks):
+    """
+    Generates a combined PDF for completed research, uploads to GDrive,
+    and triggers a Supervity skill via a background task.
+    """
+    # Basic validation
+    company = await db.get_company(request.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if not request.user_email or '@' not in request.user_email:
+        raise HTTPException(status_code=400, detail="Invalid user email provided")
+    if not google_drive_service:
+         raise HTTPException(status_code=503, detail="Google Drive service is not available.")
+    if not SUPERVITY_API_TOKEN or not SUPERVITY_ORG_ID:
+         raise HTTPException(status_code=503, detail="Supervity API credentials are not configured.")
+
+    # Add the background task
+    background_tasks.add_task(
+        run_email_report_task,
+        request.company_id,
+        request.user_email
+    )
+
+    logger.info(f"Queued background task to generate/email report for company {request.company_id} to {request.user_email}")
+    return {"message": "Report generation and sending process initiated. You will receive an email."}
+
+
+# --- Background Task Implementation ---
+async def run_email_report_task(company_id: str, user_email: str):
+    """
+    Background task: Generates combined PDF, uploads to GDrive, calls Supervity.
+    """
+    logger.info(f"Starting email report task for Company ID: {company_id}, Email: {user_email}")
+    pdf_buffer = None # Initialize
+    temp_files = [] # Initialize list for temp files
+
+    try:
+        # 1. Fetch Company and Competitors
+        company = await db.get_company(company_id)
+        if not company:
+            logger.error(f"[Email Task {company_id}] Company not found.")
+            return # Cannot proceed
+
+        company_name = company.get("name", f"Company_{company_id}")
+        all_competitors = await db.get_competitors_by_company(company_id)
+
+        # 2. Filter Completed Research
+        completed_competitors = []
+        for comp in all_competitors:
+            status = comp.get("deep_research_status")
+            markdown = comp.get("deep_research_markdown")
+            if status == "completed" and markdown and not markdown.strip().startswith("## Error"):
+                completed_competitors.append(comp)
+
+        if not completed_competitors:
+            logger.warning(f"[Email Task {company_id}] No competitors with completed research found. Aborting.")
+            # Optional: Send an email notification about no completed reports? For now, just stop.
+            return
+
+        logger.info(f"[Email Task {company_id}] Found {len(completed_competitors)} competitors with completed research.")
+
+        # 3. Generate Combined PDF
+        competitor_names = [comp['name'] for comp in completed_competitors]
+
+        # Create temporary files for pdf_service
+        for competitor_data in completed_competitors:
+            # Use tempfile correctly to get a path
+            fd, temp_path = tempfile.mkstemp(suffix='.md', text=True)
+            with os.fdopen(fd, 'w', encoding='utf-8') as temp_f:
+                temp_f.write(competitor_data['deep_research_markdown'])
+            temp_files.append(temp_path) # Store the path
+
+        # Prepare titles and filename
+        report_internal_title = f"Competitive Intelligence Report: {company_name}"
+        report_subtitle = f"Analysis covering {len(competitor_names)} key competitor(s)"
+        current_date_str = datetime.now().strftime('%Y%m%d_%H%M')
+        safe_company_name = re.sub(r'[^\w\-]+', '_', company_name)
+        pdf_filename = f"{safe_company_name}_Competitor_Report_{current_date_str}.pdf"
+
+        logger.info(f"[Email Task {company_id}] Generating combined PDF: {pdf_filename}")
+        pdf_buffer = pdf_service.generate_combined_report_pdf(
+            temp_files, # Pass the list of paths
+            competitor_names,
+            title=report_internal_title
+        )
+        logger.info(f"[Email Task {company_id}] Combined PDF generated successfully.")
+
+        # 4. Upload to Google Drive
+        if not google_drive_service:
+             logger.error(f"[Email Task {company_id}] Google Drive service not initialized. Cannot upload.")
+             # Clean up temp files even on failure
+             raise Exception("Google Drive service unavailable.") # Raise to trigger finally block
+
+        logger.info(f"[Email Task {company_id}] Uploading PDF '{pdf_filename}' to Google Drive...")
+        drive_link = google_drive_service.upload_pdf(pdf_buffer, pdf_filename)
+
+        if not drive_link:
+            logger.error(f"[Email Task {company_id}] Failed to upload PDF to Google Drive.")
+            raise Exception("Google Drive upload failed.") # Raise to trigger finally block
+
+        logger.info(f"[Email Task {company_id}] PDF uploaded to Google Drive. Link: {drive_link}")
+
+        # 5. Construct Supervity Payload
+        supervity_input_payload = {
+            "company_name": company_name,
+            "sender_email": user_email,
+            "file_link": drive_link,
+            "Agent_Status": "answered" # Add the requested status
+        }
+
+        supervity_request_body = {
+            "v2AgentId": SUPERVITY_AGENT_ID,
+            "v2SkillId": SUPERVITY_SKILL_ID,
+            "inputText": supervity_input_payload # Embed our payload here
+        }
+
+        headers = {
+            'x-api-token': SUPERVITY_API_TOKEN,
+            'x-api-org': SUPERVITY_ORG_ID,
+            'Content-Type': 'application/json' # Ensure correct content type
+        }
+
+        # 6. Call Supervity API
+        logger.info(f"[Email Task {company_id}] Sending request to Supervity API...")
+        try:
+            response = requests.post(
+                SUPERVITY_API_URL,
+                headers=headers,
+                json=supervity_request_body, # Send as JSON
+                timeout=30 # Add a timeout
+            )
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            logger.info(f"[Email Task {company_id}] Supervity API call successful. Status: {response.status_code}, Response: {response.text[:200]}...")
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Email Task {company_id}] Error calling Supervity API: {e}", exc_info=True)
+            if e.response is not None:
+                 logger.error(f"Supervity Error Response: {e.response.text}")
+            # Decide if you need to retry or notify someone
+
+    except Exception as e:
+        logger.error(f"[Email Task {company_id}] An error occurred: {e}", exc_info=True)
+        # Handle error states (e.g., notify admin, update task status if applicable)
+
+    finally:
+        # 7. Clean up temporary files regardless of success/failure
+        logger.debug(f"[Email Task {company_id}] Cleaning up {len(temp_files)} temporary markdown files...")
+        for temp_file_path in temp_files:
+            try:
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    logger.debug(f"Removed temp file: {temp_file_path}")
+            except Exception as unlink_e:
+                logger.error(f"Error removing temp file {temp_file_path}: {unlink_e}")
+        # Close buffer if it was created
+        if pdf_buffer:
+            pdf_buffer.close() 

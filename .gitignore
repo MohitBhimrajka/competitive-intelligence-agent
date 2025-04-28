@@ -92,3 +92,5 @@ backend/indexes/
 *.pkl
 *.bin
 test_run.log 
+
+service-account-key.json

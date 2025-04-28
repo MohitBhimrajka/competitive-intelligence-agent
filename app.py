@@ -231,16 +231,32 @@ def trigger_multiple_deep_research(competitor_ids):
     except:
         return None
 
-def get_pdf_download_link(competitor_id, competitor_name):
-    """Create a download link for a deep research PDF."""
-    href = f"{API_BASE_URL}/api/competitor/{competitor_id}/deep-research/download"
-    return f'<a href="{href}" target="_blank" style="text-decoration:none">Download PDF for {competitor_name}</a>'
-
-def get_multiple_pdf_download_link(competitor_ids):
-    """Create a download link for multiple deep research PDFs combined."""
-    query_param = "&".join([f"competitor_ids={id}" for id in competitor_ids])
-    href = f"{API_BASE_URL}/api/competitor/deep-research/multiple/download?{query_param}"
-    return f'<a href="{href}" target="_blank" style="text-decoration:none">Download Combined PDF Report</a>'
+# NEW Helper function to call the email report endpoint
+def request_email_report(company_id, user_email):
+    """Requests the backend to generate and email the report."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/api/competitor/report/email",
+            json={"company_id": company_id, "user_email": user_email},
+            timeout=15 # Short timeout, as backend responds quickly (202)
+        )
+        if response.status_code == 202: # Accepted
+            return True, response.json().get("message", "Report generation initiated.")
+        else:
+            error_detail = f"Error {response.status_code}: {response.text}"
+            try:
+                # Try to parse detail from JSON error response
+                error_detail = response.json().get("detail", error_detail)
+            except json.JSONDecodeError:
+                pass # Keep original text if not JSON
+            st.error(f"Failed to initiate report: {error_detail}")
+            return False, f"Failed to initiate report: {error_detail}"
+    except requests.exceptions.RequestException as e:
+        st.error(f"API connection error: {e}")
+        return False, f"API connection error: {e}"
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        return False, f"An unexpected error occurred: {e}"
 
 def display_loading_animation():
     """Display a loading animation."""
@@ -249,6 +265,7 @@ def display_loading_animation():
         for i in range(101):
             time.sleep(0.01)
             progress_bar.progress(i)
+        progress_bar.empty()
 
 def generate_report_html(company_details, competitors, news, insights):
     """Generate an HTML report with all analysis data."""
@@ -419,14 +436,19 @@ if 'news' not in st.session_state:
     st.session_state.news = None
 if 'insights' not in st.session_state:
     st.session_state.insights = None
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
 if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
-if 'deep_research_status' not in st.session_state:
-    st.session_state.deep_research_status = {}
 if 'report_ready' not in st.session_state:
     st.session_state.report_ready = False
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+if 'deep_research_status' not in st.session_state:
+    st.session_state.deep_research_status = {}
+# NEW state variables for email functionality
+if 'requesting_email_report' not in st.session_state:
+    st.session_state.requesting_email_report = False
+if 'user_email_for_report' not in st.session_state:
+    st.session_state.user_email_for_report = ""
 
 # App Header
 st.title("🔍 Competitive Intelligence Agent")
@@ -899,110 +921,136 @@ else:
             st.subheader("Deep Competitor Research")
             
             if st.session_state.competitors and len(st.session_state.competitors.get("competitors", [])) > 0:
-                # Select competitors for deep research
                 competitors = st.session_state.competitors["competitors"]
-                
-                # Display current research status
+
+                # --- Keep Competitor Selection and Research Trigger ---
+                # Update status tracking if needed
                 for comp in competitors:
                     comp_id = comp["id"]
-                    
-                    # Initialize status in session state if not present
                     if comp_id not in st.session_state.deep_research_status:
-                        if "deep_research_status" in comp:
-                            st.session_state.deep_research_status[comp_id] = comp.get("deep_research_status", "not_started")
-                
-                # Allow selection of competitors for research
+                        st.session_state.deep_research_status[comp_id] = comp.get("deep_research_status", "not_started")
+                    else: # Update if already exists
+                         st.session_state.deep_research_status[comp_id] = comp.get("deep_research_status", st.session_state.deep_research_status[comp_id])
+
                 selected_competitors = st.multiselect(
-                    "Select competitors for deep research:",
-                    options=[comp["name"] for comp in competitors],
-                    format_func=lambda x: x
+                    "Select competitors to research (if not already researched):",
+                    options=[comp["name"] for comp in competitors if comp.get("deep_research_status", "not_started") not in ["completed", "pending"]],
+                    format_func=lambda x: x,
+                    key="deep_research_select"
                 )
-                
-                # Get the competitor IDs for selected competitors
-                selected_competitor_ids = [
-                    comp["id"] for comp in competitors 
+
+                selected_competitor_ids_to_start = [
+                    comp["id"] for comp in competitors
                     if comp["name"] in selected_competitors
                 ]
-                
-                # Button to trigger deep research
-                if selected_competitor_ids:
-                    col1, col2 = st.columns([1, 3])
-                    with col1:
-                        if st.button("Start Deep Research", type="primary"):
-                            with st.spinner("Initiating deep research..."):
-                                if len(selected_competitor_ids) == 1:
-                                    result = trigger_deep_research(selected_competitor_ids[0])
-                                else:
-                                    result = trigger_multiple_deep_research(selected_competitor_ids)
-                                
-                                if result:
-                                    # Update session state with new status
-                                    for comp_id in selected_competitor_ids:
-                                        st.session_state.deep_research_status[comp_id] = "pending"
-                                    
-                                    st.success("Deep research initiated successfully!")
-                                    # Refresh competitors data
-                                    competitors_data = get_company_competitors(st.session_state.company_id)
-                                    if competitors_data:
-                                        st.session_state.competitors = competitors_data
-                
-                # Display research status and results
+
+                if selected_competitor_ids_to_start:
+                    if st.button("Start Deep Research", type="primary", key="start_deep_research_btn"):
+                        with st.spinner("Initiating deep research..."):
+                            if len(selected_competitor_ids_to_start) == 1:
+                                result = trigger_deep_research(selected_competitor_ids_to_start[0])
+                            else:
+                                result = trigger_multiple_deep_research(selected_competitor_ids_to_start)
+
+                            if result:
+                                for comp_id in selected_competitor_ids_to_start:
+                                    st.session_state.deep_research_status[comp_id] = "pending"
+                                st.success("Deep research initiated successfully! Refresh status periodically.")
+                                # Refresh competitors data immediately to show pending status
+                                time.sleep(1) # Small delay before refresh
+                                competitors_data = get_company_competitors(st.session_state.company_id)
+                                if competitors_data:
+                                    st.session_state.competitors = competitors_data
+                                    st.experimental_rerun() # Rerun to update display
+                            else:
+                                st.error("Failed to initiate deep research.")
+                # --- End Research Trigger ---
+
+                st.markdown("---")
                 st.markdown("### Research Status")
-                
+
+                completed_competitor_ids = []
                 for comp in competitors:
                     comp_id = comp["id"]
                     comp_name = comp["name"]
-                    
-                    # Get latest status from competitors data
-                    status = comp.get("deep_research_status", "not_started")
-                    
-                    # Update session state
+                    # Get latest status directly from potentially refreshed competitor data
+                    status = comp.get("deep_research_status", st.session_state.deep_research_status.get(comp_id, "not_started"))
+                    # Update session state just in case
                     st.session_state.deep_research_status[comp_id] = status
-                    
-                    # Display status with appropriate color/icon
+
                     if status == "completed":
                         status_color = "green"
                         icon = "✅"
+                        completed_competitor_ids.append(comp_id)
                     elif status == "pending":
                         status_color = "orange"
                         icon = "🔄"
                     elif status == "error":
                         status_color = "red"
                         icon = "❌"
-                    else:
+                    else: # not_started or unknown
                         status_color = "gray"
                         icon = "⏱️"
-                    
-                    st.markdown(f"<span style='color:{status_color};'>{icon} **{comp_name}**: {status.capitalize()}</span>", unsafe_allow_html=True)
-                    
-                    # Show download button if research is completed
-                    if status == "completed":
-                        st.markdown(get_pdf_download_link(comp_id, comp_name), unsafe_allow_html=True)
-                        
-                        # Display research content
-                        if comp.get("deep_research_markdown"):
-                            with st.expander(f"View Research for {comp_name}"):
-                                st.markdown(comp["deep_research_markdown"])
-                
-                # Combined PDF download for completed research
-                completed_competitor_ids = [
-                    comp["id"] for comp in competitors 
-                    if comp.get("deep_research_status") == "completed"
-                ]
-                
-                if len(completed_competitor_ids) > 1:
-                    st.markdown("### Download Combined Research Report")
-                    st.markdown(get_multiple_pdf_download_link(completed_competitor_ids), unsafe_allow_html=True)
-                
-                # Refresh button for research status
-                if st.button("Refresh Research Status"):
-                    with st.spinner("Refreshing data..."):
+
+                    st.markdown(f"<span style='color:{status_color};'>{icon} **{comp_name}**: {status.replace('_', ' ').capitalize()}</span>", unsafe_allow_html=True)
+
+                # Refresh button for research status (Keep)
+                if st.button("Refresh Research Status", key="refresh_status_btn"):
+                    with st.spinner("Refreshing status..."):
                         competitors_data = get_company_competitors(st.session_state.company_id)
                         if competitors_data:
                             st.session_state.competitors = competitors_data
+                            # Force status update from refreshed data
+                            for comp_refr in st.session_state.competitors["competitors"]:
+                                st.session_state.deep_research_status[comp_refr['id']] = comp_refr.get('deep_research_status', 'not_started')
                             st.success("Research status refreshed!")
+                            st.experimental_rerun() # Rerun to update display
+                        else:
+                            st.error("Failed to refresh competitor data.")
+
+                st.markdown("---")
+
+                # --- NEW: Email Report Section ---
+                if completed_competitor_ids:
+                    st.markdown("### Get Combined Report via Email")
+                    st.info(f"A combined report can be generated for the {len(completed_competitor_ids)} competitor(s) with completed research.")
+
+                    if st.button("Prepare Email Report", key="prepare_email_button"):
+                        st.session_state.requesting_email_report = True
+                        st.session_state.user_email_for_report = "" # Reset email field
+                        st.experimental_rerun() # Rerun to show email input
+
+                    if st.session_state.requesting_email_report:
+                        st.session_state.user_email_for_report = st.text_input(
+                            "Enter your email address:",
+                            value=st.session_state.user_email_for_report,
+                            key="user_email_input_field"
+                        )
+
+                        if st.button("Send Report via Email", key="send_email_report_btn"):
+                            email = st.session_state.user_email_for_report.strip()
+                            if email and "@" in email and "." in email: # Basic validation
+                                with st.spinner("Initiating report generation and sending... This may take a moment."):
+                                    success, message = request_email_report(st.session_state.company_id, email)
+                                    if success:
+                                        st.success(message)
+                                        st.session_state.requesting_email_report = False # Reset state
+                                        st.session_state.user_email_for_report = ""
+                                        st.experimental_rerun() # Rerun to hide email input
+                                    else:
+                                        st.error(f"Failed: {message}") # Error already shown by helper, but repeat message
+                            else:
+                                st.warning("Please enter a valid email address.")
+                        if st.button("Cancel", key="cancel_email_report_btn"):
+                             st.session_state.requesting_email_report = False
+                             st.session_state.user_email_for_report = ""
+                             st.experimental_rerun()
+
+                else:
+                    st.info("No deep research reports have been completed yet. Start research and check back later.")
+
             else:
-                st.info("No competitors have been identified yet. Please wait for the analysis to complete.")
+                st.info("No competitors identified yet. Please wait for the initial analysis to complete.")
         
         # Chat Tab
         with tabs[5]:
