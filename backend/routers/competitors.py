@@ -34,8 +34,8 @@ except Exception as drive_init_err:
 
 # --- Supervity Config (Move to .env ideally) ---
 SUPERVITY_API_URL = "https://api.supervity.ai/botapi/draftSkills/v2/execute/"
-SUPERVITY_API_TOKEN = os.getenv("SUPERVITY_API_TOKEN", "YOUR_SUPERVITY_API_TOKEN") # Get from .env
-SUPERVITY_ORG_ID = os.getenv("SUPERVITY_ORG_ID", "YOUR_SUPERVITY_ORG_ID") # Get from .env
+SUPERVITY_API_TOKEN = "720819056d1a426837896db9"  # Fixed API token
+SUPERVITY_ORG_ID = "2051"  # Fixed organization ID
 SUPERVITY_AGENT_ID = "cm42n7m0j000ahpqwcwgsvpew"
 SUPERVITY_SKILL_ID = "dn3xqylt4ncr0i0jywco40fb"
 
@@ -635,45 +635,54 @@ async def run_email_report_task(company_id: str, user_email: str):
             "company_name": company_name,
             "sender_email": user_email,
             "file_link": drive_link,
-            "file_format": report_format.upper(),  # Add format information
-            "local_file_path": local_file_path,  # Add local file path if available
-            "Agent_Status": "answered" # Add the requested status
+            "file_format": report_format.upper(),
+            "local_file_path": local_file_path,
+            "Agent_Status": "answered"
         }
 
         supervity_request_body = {
             "v2AgentId": SUPERVITY_AGENT_ID,
             "v2SkillId": SUPERVITY_SKILL_ID,
-            "inputText": supervity_input_payload # Embed our payload here
+            "inputText": supervity_input_payload
         }
 
         headers = {
             'x-api-token': SUPERVITY_API_TOKEN,
             'x-api-org': SUPERVITY_ORG_ID,
-            'Content-Type': 'application/json' # Ensure correct content type
+            'Content-Type': 'application/json'
         }
 
         # 6. Call Supervity API
-        if SUPERVITY_API_TOKEN and SUPERVITY_ORG_ID:
-            logger.info(f"[Email Task {company_id}] Sending request to Supervity API...")
+        logger.info(f"[Email Task {company_id}] Sending request to Supervity API...")
+        try:
+            logger.info(f"[Email Task {company_id}] Request headers: {headers}")
+            logger.info(f"[Email Task {company_id}] Request body structure: {json.dumps(supervity_request_body, indent=2)}")
+            
+            response = requests.post(
+                SUPERVITY_API_URL,
+                headers=headers,
+                json=supervity_request_body,
+                timeout=30
+            )
+            
+            logger.info(f"[Email Task {company_id}] API response status: {response.status_code}")
+            
+            # Print response content even if status code indicates error
             try:
-                response = requests.post(
-                    SUPERVITY_API_URL,
-                    headers=headers,
-                    json=supervity_request_body, # Send as JSON
-                    timeout=30 # Add a timeout
-                )
-                response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-                logger.info(f"[Email Task {company_id}] Supervity API call successful. Status: {response.status_code}, Response: {response.text[:200]}...")
+                response_text = response.text
+                logger.info(f"[Email Task {company_id}] API response: {response_text[:200]}...")
+            except Exception as resp_err:
+                logger.error(f"[Email Task {company_id}] Could not read response text: {resp_err}")
+            
+            response.raise_for_status()
+            logger.info(f"[Email Task {company_id}] Supervity API call successful")
 
-            except requests.exceptions.RequestException as e:
-                logger.error(f"[Email Task {company_id}] Error calling Supervity API: {e}", exc_info=True)
-                if e.response is not None:
-                     logger.error(f"Supervity Error Response: {e.response.text}")
-                # Not raising an exception here as we've already generated the file
-                logger.info(f"[Email Task {company_id}] Report was generated but email delivery failed. Local copy: {local_file_path}")
-        else:
-            logger.warning(f"[Email Task {company_id}] Supervity API not configured. Report generated but not emailed.")
-            logger.info(f"[Email Task {company_id}] Report available at: {drive_link or local_file_path}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Email Task {company_id}] Error calling Supervity API: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Supervity Error Response: {e.response.text}")
+            # Not raising an exception here as we've already generated the file
+            logger.info(f"[Email Task {company_id}] Report was generated but email delivery failed. Local copy: {local_file_path}")
 
     except Exception as e:
         logger.error(f"[Email Task {company_id}] An error occurred: {e}", exc_info=True)
