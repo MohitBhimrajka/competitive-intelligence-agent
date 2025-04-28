@@ -1,193 +1,96 @@
-# Competitive Intelligence Agent
+# Competitive Intelligence Agent - Streamlit App
 
-A powerful AI-powered competitive intelligence platform that automates competitor monitoring and analysis.
+A modern Streamlit interface for the Competitive Intelligence Agent backend that provides comprehensive analysis of companies and their competitive landscape.
 
 ## Features
 
-- Company analysis using Google Gemini API
-- Automatic competitor identification
-- Real-time news gathering about competitors
-- AI-powered competitive insights generation
-- Interactive dashboards with competitor analysis
-- User-friendly interface
+- **Company Analysis**: Enter any company name to initiate a comprehensive analysis of its competitive landscape.
+- **Competitor Identification**: Automatically identifies and analyzes key competitors.
+- **News Monitoring**: Collects and displays relevant news articles about the company and its competitors.
+- **Strategic Insights**: Generates AI-powered insights about market position and competitive advantages.
+- **Deep Research**: Request detailed research reports on specific competitors.
+- **RAG-Powered Chat**: Ask natural language questions about the company and its competitors.
 
-## New Features
+## Screenshots
 
-### Deep Competitor Research
-Generate comprehensive, detailed research reports about competitors using a powerful AI model.
+![Dashboard Overview](screenshots/dashboard.png)
+![Competitor Analysis](screenshots/competitors.png)
+![Deep Research](screenshots/deep_research.png)
 
-- **Trigger research**: Send a POST request to `/api/competitor/{competitor_id}/deep-research`
-- **Check status**: The competitors list endpoint will include `deep_research_status` (not_started, pending, completed, error)
-- **View report**: Access the markdown content from the competitors list endpoint in the `deep_research_markdown` field
-- **Download as PDF**: GET `/api/competitor/{competitor_id}/deep-research/download` returns a downloadable PDF
+## Prerequisites
 
-### RAG Chat Interface
-Ask questions about your competitors and get answers based on all available data.
-
-- **Send queries**: POST to `/api/chat/{company_id}` with a JSON body containing a `query` field
-- **Example**: `{ "query": "What are the strengths of Competitor X?" }`
-- **RAG-powered**: Uses embeddings and semantic search to find relevant information across all company data, deep research reports, news, and insights
-
-### Streamlit Frontend (New!)
-A simpler, Python-based frontend alternative using Streamlit.
-
-- **Quick setup**: Fewer dependencies and faster to deploy
-- **All features**: Supports the same functionality as the React frontend
-- **Simplified UI**: Clean, functional interface with tabbed navigation
-
-## Tech Stack
-
-### Backend
-- Python 3.11 or higher
-- FastAPI
-- LangChain
-- Google Gemini API
-- News API
-
-### Frontend Options
-
-#### Streamlit Frontend (Alternative)
+- Python 3.8+
 - Streamlit
-- Pandas
-- Python Requests
+- Running Competitive Intelligence Agent backend API
+- Internet connection
 
 ## Installation
 
-1. Install dependencies:
-```bash
-cd backend
-pip install -r requirements.txt
-```
+1. Clone this repository:
+   ```
+   git clone https://github.com/yourusername/competitive-intelligence-agent.git
+   cd competitive-intelligence-agent
+   ```
 
-2. Set up your Google API key with a `.env` file:
-```
-GOOGLE_API_KEY=your_api_key_here
-NEWS_API_KEY=your_news_api_key_here
-```
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-3. Run the application:
-```bash
-cd backend
-python main.py
-```
+3. Make sure the backend API is running:
+   ```
+   cd backend
+   python -m uvicorn main:app --reload
+   ```
 
-The server will be available at http://localhost:8000.
+4. Run the Streamlit app:
+   ```
+   streamlit run app.py
+   ```
 
-## API Usage
+## Usage
 
-1. Create/analyze a company:
-   - POST `/api/company` with body `{"name": "Apple"}`
-   - Returns a company ID and kicks off background processing
+1. Open the app in your browser (typically http://localhost:8501).
+2. Enter a company name in the input field (e.g., "Tesla", "Airbnb", "Netflix").
+3. Click "Analyze" to initiate the competitive intelligence analysis.
+4. Wait for the analysis to complete (this may take a few moments).
+5. Explore the different tabs to view:
+   - Overview dashboard with key metrics
+   - Detailed competitor profiles with strengths and weaknesses
+   - News monitoring for relevant articles
+   - AI-generated strategic insights
+   - Deep research reports on competitors
+   - Interactive chat for asking questions about the data
 
-2. Monitor results:
-   - GET `/api/company/{company_id}` - Company details
-   - GET `/api/company/{company_id}/competitors` - Competitor analysis
-   - GET `/api/news/company/{company_id}` - News articles
+## Configuration
 
-3. Use new features:
-   - For any competitor, trigger deep research with POST `/api/competitor/{competitor_id}/deep-research`
-   - Ask questions with POST `/api/chat/{company_id}` and body `{"query": "What are the main competitors of this company?"}`
+The app connects to the backend API at `http://localhost:8000` by default. If your backend is running on a different address, modify the `API_BASE_URL` variable in `app.py`.
 
-## System Architecture
+## How It Works
 
-- **FastAPI Backend**: Main API application with routers for various features
-- **In-Memory Database**: For demo purposes, data is stored in-memory (can be replaced with proper database)
-- **Google Gemini Models**: Powers analysis, deep research (Pro model), and chat functionality
-- **RAG System**: Enables querying across all collected data using semantic search
+1. **Data Collection**: The app communicates with the backend API to trigger data collection and analysis for the specified company.
+2. **Real-Time Updates**: The app polls the API for updates as analysis progresses through different stages.
+3. **Interactive Display**: Once data is collected, it is presented in an interactive dashboard with visualizations and filtering options.
+4. **RAG Chat**: The app uses a Retrieval-Augmented Generation system to answer questions based on the collected competitive intelligence data.
 
-## Architecture
+## Deep Research Feature
 
-The application follows this workflow:
-1. User enters their company name on the landing page
-2. Backend analyzes the company using Gemini API
-3. Competitors are automatically identified
-4. News about competitors is gathered through News API
-5. AI generates insights based on competitor analysis and news
-6. All information is displayed on a dashboard
+The Deep Research feature allows you to generate comprehensive reports on specific competitors:
 
-## Required API Keys
-
-To run this application, you will need to obtain the following API keys:
-
-1. **Google Gemini API Key**
-   - Go to [Google AI Studio](https://ai.google.dev/)
-   - Sign up or sign in to your Google account
-   - Create a new API key
-
-2. **News API Key**
-   - Go to [News API](https://newsapi.org/)
-   - Sign up for a free API key
-   - Copy your API key from the dashboard
-
-## Setup
-
-### Backend Setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
-
-# Create a .env file with:
-GOOGLE_API_KEY=your-google-api-key
-NEWS_API_KEY=your-news-api-key
-
-# Start the server
-python -m uvicorn main:app --reload
-# Or use the provided start script
-chmod +x start.sh
-./start.sh
-```
-
-### Frontend Setup Options
-
-#### Option 1: React Frontend
-```bash
-cd frontend
-npm install
-
-# Create a .env file with:
-VITE_API_URL=http://localhost:8000
-
-# Start the development server
-npm run dev
-```
-
-#### Option 2: Streamlit Frontend (New!)
-```bash
-cd frontend_streamlit
-pip install -r requirements.txt
-
-# Start the Streamlit app
-streamlit run app.py
-```
-
-The Streamlit interface will be available at http://localhost:8501.
-
-## API Endpoints
-
-### Company Endpoints
-- `POST /api/company` - Submit company name and initiate analysis
-- `GET /api/company/{company_id}` - Get company details
-- `GET /api/company/{company_id}/competitors` - Get identified competitors for a company
-
-### News Endpoints
-- `GET /api/news/competitor/{competitor_id}` - Get news for a specific competitor
-- `GET /api/news/company/{company_id}` - Get news for all competitors of a company
-
-### Insights Endpoints
-- `GET /api/insights/company/{company_id}` - Get AI-generated insights for a company
-- `POST /api/insights/company/{company_id}/refresh` - Refresh insights
+1. Navigate to the "Deep Research" tab
+2. Select one or more competitors from the dropdown
+3. Click "Start Deep Research" to initiate the process
+4. Once complete, you can:
+   - View the research directly in the app
+   - Download individual PDF reports
+   - Download a combined PDF report for multiple competitors
 
 ## Troubleshooting
 
-### API Key Issues
-- If you get "API key not found" errors, make sure your .env file is in the correct location and contains the right API keys
-- For Gemini API issues, verify your API key is active and has the necessary permissions
-
-### Timeout Issues
-- If insights generation takes too long, it might be due to API rate limits. Try again after a few minutes.
+- **API Connection Error**: Make sure the backend API is running at the correct address.
+- **Slow Analysis**: The initial analysis involves multiple API calls and data processing. Wait for all stages to complete.
+- **Empty Results**: If certain sections show no data, try refreshing using the "Refresh Data" button.
 
 ## License
 
-MIT 
+[MIT License](LICENSE) 
