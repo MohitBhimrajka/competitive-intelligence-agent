@@ -42,52 +42,67 @@
         .cover-page {
             page: cover; /* Apply cover page style */
             page-break-after: always;
-            display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
-            padding: 2cm 0; /* Example padding */
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            text-align: center;
+            padding: 2.5cm 3cm; /* Increased padding */
             min-height: 25cm; /* Ensure it takes up most of the page */
+            background-color: #f9f9f9; /* Light background color */
+            border: 1px solid #e0e0e0; /* Subtle border */
         }
         .cover-logo {
             /* Optional: Add styles if you include a logo image */
             max-width: 150px; /* Example */
-            margin-bottom: 1.5cm;
+            margin-bottom: 2cm;
         }
         .cover-title {
-            font-size: 28pt;
+            font-size: 32pt; /* Increased size */
             font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 0.5cm; /* Reduced margin */
+            color: #1a365d; /* Darker blue */
+            margin-bottom: 0.8cm; /* Increased margin */
+            line-height: 1.2;
+            max-width: 80%; /* Limit width */
         }
-        /* --- New Style for Subtitle --- */
         .cover-subtitle-detail {
-            font-size: 16pt;
-            color: #34495e;
-            margin-bottom: 2cm; /* Increased margin after subtitle */
+            font-size: 18pt; /* Increased size */
+            color: #2a4365; /* Complementary blue */
+            margin-bottom: 2.5cm; /* Increased margin */
             font-weight: normal;
+            max-width: 75%;
+            line-height: 1.3;
         }
-        /* --- End New Style --- */
-        .cover-report-type { /* Renamed from cover-subtitle */
-            font-size: 14pt; /* Adjusted size */
-            color: #7f8c8d;
-            margin-bottom: 1cm;
+        .cover-report-type {
+            font-size: 16pt; /* Increased size */
+            color: #4a5568; /* Darker gray */
+            margin-bottom: 1.5cm;
+            font-weight: 500; /* Semi-bold */
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         .cover-date {
-            font-size: 12pt;
-            color: #7f8c8d;
-            margin-bottom: 3cm; /* Increased margin */
+            font-size: 14pt; /* Increased size */
+            color: #4a5568;
+            margin-bottom: 3.5cm; /* Increased margin */
+            font-style: italic;
         }
-        /* --- New Style for Agent Description --- */
         .cover-agent-description {
-            font-size: 11pt;
-            color: #555;
-            margin-bottom: 1cm; /* Space before footer */
+            font-size: 12pt;
+            color: #4a5568;
+            margin-bottom: 2cm; /* Increased space */
             max-width: 70%; /* Limit width */
+            line-height: 1.5;
+            padding: 0.8cm;
+            border-top: 1px solid #ccc;
+            border-bottom: 1px solid #ccc;
         }
-        /* --- End New Style --- */
         .cover-footer {
-            font-size: 10pt;
-            color: #7f8c8d;
+            font-size: 11pt;
+            color: #4a5568;
             margin-top: auto; /* Push footer towards bottom */
-             padding-bottom: 1cm; /* Add some padding at the bottom */
+            padding-bottom: 1cm; /* Add some padding at the bottom */
+            font-weight: 500;
         }
         
         /* Table of contents */
@@ -163,12 +178,12 @@
         <div class="cover-logo">
             <!-- Optional: <img src="path/to/your/logo.png" alt="Logo"> -->
         </div>
+        <div class="cover-report-type">Competitive Intelligence Report</div>
         <div class="cover-title">{{ report_title }}</div>
         <div class="cover-subtitle-detail">{{ report_subtitle }}</div>
-        <div class="cover-report-type">Competitive Intelligence Report</div>
         <div class="cover-date">{{ date }}</div>
         <div class="cover-agent-description">{{ agent_description }}</div>
-        <div class="cover-footer">Developed by Competitive Intelligence Agent</div>
+        <div class="cover-footer">Confidential — For Internal Use Only</div>
     </div>
     
     <!-- Table of Contents -->
