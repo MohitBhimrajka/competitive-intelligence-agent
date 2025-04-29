@@ -970,7 +970,7 @@ else:
         ):
             st.markdown(
                 f"""<div style="background-color: #e3f2fd; border-radius: 12px; padding: 16px; margin-bottom: 24px; border-left: 4px solid #4361ee;">
-            <h3 style="margin: 0;">🎉 {st.session_state.company_details["welcome_message"]}</h3>
+            <h4 style="margin: 0;">🎉 {st.session_state.company_details["welcome_message"]}</h4>
             </div>""",
                 unsafe_allow_html=True,
             )
