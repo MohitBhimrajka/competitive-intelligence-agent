@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 # Configuration
 FAISS_INDEX_PATH = "./faiss_indexes" # Directory to save indexes relative to where main.py is run
 EMBEDDING_MODEL_NAME = "models/embedding-001" # Google's embedding model
-# Use a Gemini model for Chat - Flash is faster and cheaper, Pro is more powerful
 LLM_MODEL_NAME = "gemini-2.0-flash-001"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
