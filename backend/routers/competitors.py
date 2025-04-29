@@ -635,7 +635,7 @@ async def run_email_report_task(company_id: str, user_email: str):
         # Create a simple text file with only the 3 required fields
         txt_content = {
             "receiver_email": user_email,
-            "receiver_company_name": company_name,
+            "company_name": company_name,
             "file_link": drive_link
         }
         
