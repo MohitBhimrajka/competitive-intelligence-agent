@@ -12,6 +12,7 @@ import asyncio  # Import asyncio
 import re  # Import regex
 import requests # Import requests for Supervity call
 import json # Import json for Supervity payload
+import subprocess # Import subprocess for curl command execution
 
 from services.database import db
 from services.gemini_service import GeminiService
@@ -36,8 +37,8 @@ except Exception as drive_init_err:
 SUPERVITY_API_URL = "https://api.supervity.ai/botapi/draftSkills/v2/execute/"
 SUPERVITY_API_TOKEN = "720819056d1a426837896db9"  # Fixed API token
 SUPERVITY_ORG_ID = "2051"  # Fixed organization ID
-SUPERVITY_AGENT_ID = "cm42n7m0j000ahpqwcwgsvpew"
-SUPERVITY_SKILL_ID = "dn3xqylt4ncr0i0jywco40fb"
+SUPERVITY_AGENT_ID = "cma11km3i00f5nvo7yn2bcwqs"
+SUPERVITY_SKILL_ID = "ca4o24jvtsjzkocdr5gml3x0"
 
 class Competitor(BaseModel):
     id: int
@@ -630,59 +631,52 @@ async def run_email_report_task(company_id: str, user_email: str):
             else:
                 raise Exception("Google Drive service unavailable and no local file available.")
 
-        # 5. Construct Supervity Payload
-        supervity_input_payload = {
-            "company_name": company_name,
-            "sender_email": user_email,
-            "file_link": drive_link,
-            "file_format": report_format.upper(),
-            "local_file_path": local_file_path,
-            "Agent_Status": "answered"
+        # 5. Construct Supervity Payload and Create TXT File
+        # Create a simple text file with only the 3 required fields
+        txt_content = {
+            "receiver_email": user_email,
+            "receiver_company_name": company_name,
+            "file_link": drive_link
         }
-
-        supervity_request_body = {
-            "v2AgentId": SUPERVITY_AGENT_ID,
-            "v2SkillId": SUPERVITY_SKILL_ID,
-            "inputText": supervity_input_payload
-        }
-
-        headers = {
-            'x-api-token': SUPERVITY_API_TOKEN,
-            'x-api-org': SUPERVITY_ORG_ID,
-            'Content-Type': 'application/json'
-        }
-
-        # 6. Call Supervity API
+        
+        # Create a temporary text file
+        fd, temp_txt_path = tempfile.mkstemp(suffix='.txt', text=True)
+        with os.fdopen(fd, 'w', encoding='utf-8') as txt_file:
+            json.dump(txt_content, txt_file)
+        
+        # 6. Call Supervity API using curl with form data
         logger.info(f"[Email Task {company_id}] Sending request to Supervity API...")
         try:
-            logger.info(f"[Email Task {company_id}] Request headers: {headers}")
-            logger.info(f"[Email Task {company_id}] Request body structure: {json.dumps(supervity_request_body, indent=2)}")
+            # Build curl command as a string to ensure proper quoting
+            curl_cmd = f'curl -L -X POST "https://api.supervity.ai/botapi/draftSkills/v2/execute/" --header \'x-api-token: {SUPERVITY_API_TOKEN}\' --header \'x-api-org: {SUPERVITY_ORG_ID}\' --form \'v2AgentId={SUPERVITY_AGENT_ID}\' --form \'v2SkillId={SUPERVITY_SKILL_ID}\' --form \'inputFiles=@"{temp_txt_path}"\''
             
-            response = requests.post(
-                SUPERVITY_API_URL,
-                headers=headers,
-                json=supervity_request_body,
-                timeout=30
-            )
+            logger.info(f"[Email Task {company_id}] Executing curl command: {curl_cmd}")
             
-            logger.info(f"[Email Task {company_id}] API response status: {response.status_code}")
+            # Execute curl command with shell=True to preserve quotes
+            process = subprocess.run(curl_cmd, capture_output=True, text=True, shell=True)
             
-            # Print response content even if status code indicates error
-            try:
-                response_text = response.text
-                logger.info(f"[Email Task {company_id}] API response: {response_text[:200]}...")
-            except Exception as resp_err:
-                logger.error(f"[Email Task {company_id}] Could not read response text: {resp_err}")
+            logger.info(f"[Email Task {company_id}] API response status: {process.returncode}")
             
-            response.raise_for_status()
-            logger.info(f"[Email Task {company_id}] Supervity API call successful")
-
-        except requests.exceptions.RequestException as e:
+            if process.returncode == 0:
+                logger.info(f"[Email Task {company_id}] API response: {process.stdout[:200]}...")
+                logger.info(f"[Email Task {company_id}] Supervity API call successful")
+            else:
+                logger.error(f"[Email Task {company_id}] API error: {process.stderr}")
+                raise Exception(f"Supervity API call failed: {process.stderr}")
+            
+        except Exception as e:
             logger.error(f"[Email Task {company_id}] Error calling Supervity API: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                logger.error(f"Supervity Error Response: {e.response.text}")
             # Not raising an exception here as we've already generated the file
             logger.info(f"[Email Task {company_id}] Report was generated but email delivery failed. Local copy: {local_file_path}")
+        
+        finally:
+            # Clean up the temporary text file
+            if os.path.exists(temp_txt_path):
+                try:
+                    os.unlink(temp_txt_path)
+                    logger.debug(f"Removed temp txt file: {temp_txt_path}")
+                except Exception as unlink_e:
+                    logger.error(f"Error removing temp txt file {temp_txt_path}: {unlink_e}")
 
     except Exception as e:
         logger.error(f"[Email Task {company_id}] An error occurred: {e}", exc_info=True)
