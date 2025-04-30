@@ -2,199 +2,197 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ report_title }}</title>
     <style>
-        @page cover {
-            /* Specific styles for the cover page if needed, like no margins */
-            margin: 0;
-        }
-        @page toc_page {
-             /* Styles for TOC page, maybe different margins or headers/footers */
-             margin: 2cm; /* Example */
-             @top-right { content: normal; } /* Disable default header/footer */
-             @bottom-right { content: normal; }
-             /* ... add custom TOC headers/footers if desired */
-        }
-        @page content_page {
-            /* Default styles for content pages */
-            size: a4 portrait;
-            margin: 2cm; /* Standard margins */
-
-            @top-center {
+        @page {
+            margin: 2cm;
+            @top-right {
+                content: "Page " counter(page);
+                font-size: 9pt;
+                color: #666;
+            }
+            @top-left {
                 content: "{{ report_title }}";
-                font-size: 9pt; color: #555; vertical-align: bottom; padding-bottom: 5mm;
-                border-bottom: 0.5pt solid #ccc; width: 100%;
+                font-size: 9pt;
+                color: #666;
             }
-            @bottom-left {
-                content: "Generated: {{ date }}"; /* Use the date variable */
-                font-size: 9pt; color: #555; vertical-align: top; padding-top: 5mm;
-            }
-            @bottom-right {
-                content: "Page " counter(page) " of " counter(pages);
-                font-size: 9pt; color: #555; vertical-align: top; padding-top: 5mm;
-            }
-        }
-
-        /* General styling */
-        body { font-family: "Helvetica Neue", Arial, sans-serif; line-height: 1.5; font-size: 11pt; color: #333; margin: 0; padding: 0; }
-
-        /* Cover page */
-        .cover-page {
-            page: cover; /* Apply cover page style */
-            page-break-after: always;
-            display: flex; 
-            flex-direction: column; 
-            justify-content: center; 
-            align-items: center; 
-            text-align: center;
-            padding: 2.5cm 3cm; /* Increased padding */
-            min-height: 25cm; /* Ensure it takes up most of the page */
-            background-color: #f9f9f9; /* Light background color */
-            border: 1px solid #e0e0e0; /* Subtle border */
-        }
-        .cover-logo {
-            /* Optional: Add styles if you include a logo image */
-            max-width: 150px; /* Example */
-            margin-bottom: 2cm;
-        }
-        .cover-title {
-            font-size: 32pt; /* Increased size */
-            font-weight: bold;
-            color: #1a365d; /* Darker blue */
-            margin-bottom: 0.8cm; /* Increased margin */
-            line-height: 1.2;
-            max-width: 80%; /* Limit width */
-        }
-        .cover-subtitle-detail {
-            font-size: 18pt; /* Increased size */
-            color: #2a4365; /* Complementary blue */
-            margin-bottom: 2.5cm; /* Increased margin */
-            font-weight: normal;
-            max-width: 75%;
-            line-height: 1.3;
-        }
-        .cover-report-type {
-            font-size: 16pt; /* Increased size */
-            color: #4a5568; /* Darker gray */
-            margin-bottom: 1.5cm;
-            font-weight: 500; /* Semi-bold */
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .cover-date {
-            font-size: 14pt; /* Increased size */
-            color: #4a5568;
-            margin-bottom: 3.5cm; /* Increased margin */
-            font-style: italic;
-        }
-        .cover-agent-description {
-            font-size: 12pt;
-            color: #4a5568;
-            margin-bottom: 2cm; /* Increased space */
-            max-width: 70%; /* Limit width */
-            line-height: 1.5;
-            padding: 0.8cm;
-            border-top: 1px solid #ccc;
-            border-bottom: 1px solid #ccc;
-        }
-        .cover-footer {
-            font-size: 11pt;
-            color: #4a5568;
-            margin-top: auto; /* Push footer towards bottom */
-            padding-bottom: 1cm; /* Add some padding at the bottom */
-            font-weight: 500;
         }
         
-        /* Table of contents */
-        .toc {
-             page: toc_page; /* Apply TOC page style */
-             page-break-after: always;
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.5;
+            color: #333;
+            margin: 0;
+            padding: 0;
         }
-        .toc-title { font-size: 18pt; font-weight: bold; color: #2c3e50; margin-top: 0; margin-bottom: 1cm; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; }
-        .toc-entry { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5cm; font-size: 11pt; }
-        .toc-entry a { color: #2980b9; text-decoration: none; padding-right: 5px; }
-        .toc-dots { flex-grow: 1; border-bottom: 1px dotted #bdc3c7; margin: 0 5px; position: relative; top: -3px; }
-        .toc-page::before { content: target-counter(attr(href), page); } /* Update TOC page numbers selector */
-
-        /* Content styling */
-        .content {
-            page: content_page; /* Apply content page style */
+        
+        .cover {
+            text-align: center;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            page-break-after: always;
         }
-
-        h1, h2, h3, h4, h5, h6 { font-family: "Helvetica Neue", Arial, sans-serif; color: #2c3e50; margin-top: 1.2em; margin-bottom: 0.6em; line-height: 1.3; }
-        h1 { font-size: 20pt; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; margin-top: 0; page-break-before: auto; page-break-after: avoid; } /* Adjust page breaks for headings */
-        h2 { font-size: 16pt; page-break-after: avoid; }
-        h3 { font-size: 14pt; page-break-after: avoid; }
-        h4 { font-size: 12pt; page-break-after: avoid; }
-        p { margin-bottom: 0.8em; }
-        ul, ol { padding-left: 25pt; margin-bottom: 0.8em; }
-        li { margin-bottom: 0.3em; }
-        code { font-family: "Courier New", monospace; background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; color: #e74c3c; }
-        pre {
-            font-family: "Courier New", monospace; background-color: #f4f4f4; padding: 10px; border-radius: 5px;
-            /* Remove overflow-x, use wrap */
-            white-space: pre-wrap; word-wrap: break-word;
-            font-size: 0.9em; border: 1px solid #ddd; page-break-inside: avoid; /* Prevent page breaks inside code blocks */
+        
+        .cover-title {
+            font-size: 32pt;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2c3e50;
         }
-        a { color: #3498db; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        strong, b { font-weight: bold; }
-        em, i { font-style: italic; }
-        table { border-collapse: collapse; width: 100%; margin-bottom: 1em; page-break-inside: avoid; } /* Avoid page breaks inside tables */
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-
-        /* Multi-competitor separator */
-        .competitor-section { /* This might just be a conceptual separator in markdown combining */
-             /* If you use an actual div in the combined markdown: */
+        
+        .cover-subtitle {
+            font-size: 18pt;
+            margin-bottom: 40px;
+            color: #3498db;
+        }
+        
+        .cover-date {
+            font-size: 14pt;
+            margin-bottom: 40px;
+            color: #7f8c8d;
+        }
+        
+        .cover-agent {
+            font-size: 10pt;
+            color: #95a5a6;
+            margin-top: 60px;
+        }
+        
+        .toc-title {
+            font-size: 24pt;
+            color: #2c3e50;
+            margin-bottom: 20px;
             page-break-before: always;
-            margin-top: 2cm; /* Add space before the new competitor */
         }
-
-        /* Add IDs to link targets */
-        h1 a[id], h2 a[id], h3 a[id], h4 a[id], h5 a[id], h6 a[id] {
-             position: relative;
-             top: -2cm; /* Adjust anchor offset if headers are obscured by fixed elements (usually not needed in print) */
+        
+        .toc-container {
+            margin-bottom: 30px;
+            page-break-after: always;
         }
-
-        /* Improve image handling */
+        
+        .toc-entry {
+            display: flex;
+            align-items: baseline;
+            margin-bottom: 8px;
+            font-size: 12pt;
+        }
+        
+        .toc-dots {
+            flex: 1;
+            margin: 0 4px;
+            border-bottom: 1px dotted #bbb;
+        }
+        
+        .toc-page::after {
+            content: target-counter(attr(href), page);
+        }
+        
+        h1 {
+            font-size: 24pt;
+            color: #2c3e50;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        h2 {
+            font-size: 18pt;
+            color: #3498db;
+            margin-top: 15px;
+            margin-bottom: 8px;
+        }
+        
+        h3 {
+            font-size: 14pt;
+            color: #2980b9;
+            margin-top: 12px;
+            margin-bottom: 6px;
+        }
+        
+        p {
+            margin-bottom: 10px;
+        }
+        
+        ul, ol {
+            margin-bottom: 10px;
+            padding-left: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #f8f9fa;
+        }
+        
+        code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        
+        blockquote {
+            margin: 10px 0;
+            padding: 10px 20px;
+            border-left: 4px solid #3498db;
+            background-color: #f8f9fa;
+        }
+        
         img {
             max-width: 100%;
             height: auto;
-            page-break-inside: avoid;
         }
         
-        /* Ensure code blocks don't overflow */
-        pre code {
-            display: block;
-            overflow-x: auto;
-            white-space: pre-wrap;
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .competitor-section {
+            page-break-before: always;
         }
     </style>
 </head>
 <body>
     <!-- Cover page -->
-    <div class="cover-page">
-        <div class="cover-logo">
-            <!-- Optional: <img src="path/to/your/logo.png" alt="Logo"> -->
-        </div>
-        <div class="cover-report-type">Competitive Intelligence Report</div>
+    <div class="cover">
         <div class="cover-title">{{ report_title }}</div>
-        <div class="cover-subtitle-detail">{{ report_subtitle }}</div>
+        <div class="cover-subtitle">{{ report_subtitle }}</div>
         <div class="cover-date">{{ date }}</div>
-        <div class="cover-agent-description">{{ agent_description }}</div>
-        <div class="cover-footer">Confidential — For Internal Use Only</div>
+        <div class="cover-agent">{{ agent_description }}</div>
     </div>
     
     <!-- Table of Contents -->
-    <div class="toc">
+    <div class="toc-container">
         <div class="toc-title">Table of Contents</div>
         {{ toc_content|safe }}
     </div>
     
-    <!-- Report Content -->
-    <div class="content">
-        {{ content|safe }} <!-- Use safe filter if content contains HTML -->
-    </div>
+    <!-- Content -->
+    {{ content|safe }}
 </body>
 </html> 

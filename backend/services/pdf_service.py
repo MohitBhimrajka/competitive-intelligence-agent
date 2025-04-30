@@ -8,7 +8,14 @@ import base64
 from datetime import datetime
 from typing import List, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import HTML, CSS  # Remove FontConfiguration import
+
+# Try to import WeasyPrint, but have a fallback if it fails
+try:
+    from weasyprint import HTML, CSS
+    WEASYPRINT_AVAILABLE = True
+except (ImportError, OSError) as e:
+    logging.warning(f"WeasyPrint import failed: {e}. PDF generation will be unavailable, falling back to HTML.")
+    WEASYPRINT_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +38,8 @@ class PDFService:
         )
 
         logger.info(f"PDF Service initialized with template directory: {template_dir}")
+        if not WEASYPRINT_AVAILABLE:
+            logger.warning("WeasyPrint is not available. PDF generation will be disabled, HTML will be used instead.")
 
     def _extract_table_of_contents(self, markdown_text: str) -> List[dict]:
         """Extract headers from markdown to create a table of contents."""
@@ -164,6 +173,11 @@ class PDFService:
     def generate_pdf_from_html_buffer(self, html_buffer: io.BytesIO) -> io.BytesIO:
         """Convert an HTML buffer to a PDF buffer using WeasyPrint."""
         try:
+            if not WEASYPRINT_AVAILABLE:
+                logger.warning("WeasyPrint not available. Returning HTML buffer instead of PDF.")
+                html_buffer.seek(0)
+                return html_buffer
+                
             pdf_buffer = io.BytesIO()
             
             # Get base URL for proper resource loading
@@ -253,7 +267,22 @@ class PDFService:
             except Exception as debug_err:
                 logger.error(f"Error saving debug HTML: {debug_err}")
             
-            raise
+            # Return a new HTML buffer if the original is corrupted
+            try:
+                html_buffer.seek(0)
+                return html_buffer
+            except:
+                # Last resort: return a buffer with error message
+                error_buffer = io.BytesIO()
+                error_html = f"""
+                <html><body>
+                <h1>PDF Generation Error</h1>
+                <p>There was an error generating the PDF report: {str(e)}</p>
+                </body></html>
+                """.encode('utf-8')
+                error_buffer.write(error_html)
+                error_buffer.seek(0)
+                return error_buffer
 
     # Kept title for backward compatibility if called directly, but prefer report_title
     def markdown_to_pdf(self, markdown_text: str, title: str) -> io.BytesIO:
