@@ -1,7 +1,5 @@
 import os
 import io
-import json
-import tempfile
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -34,40 +32,18 @@ class GoogleDriveService:
             logger.error("Failed to obtain Google Drive credentials.")
 
     def _get_credentials(self):
-        """Gets credentials from the service account key file or environment variable."""
+        """Gets credentials from the service account key file."""
         try:
-            # First try to get credentials from environment variable
-            service_account_key = os.getenv("GOOGLE_SERVICE_ACCOUNT_KEY")
-            if service_account_key:
-                try:
-                    # Create a temporary file with the service account key json content
-                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as tmp:
-                        tmp.write(service_account_key)
-                        tmp_file_path = tmp.name
-                    
-                    credentials = service_account.Credentials.from_service_account_file(
-                        tmp_file_path, scopes=SCOPES)
-                    
-                    # Remove the temporary file
-                    os.unlink(tmp_file_path)
-                    
-                    logger.info("Successfully loaded service account credentials from environment variable")
-                    return credentials
-                except Exception as env_error:
-                    logger.error(f"Error loading service account credentials from environment: {env_error}", exc_info=True)
-                    # Fall back to file-based credentials
-            
-            # Fall back to file-based credentials
             if not os.path.exists(SERVICE_ACCOUNT_FILE):
                 logger.error(f"Service account key file not found: {SERVICE_ACCOUNT_FILE}")
                 logger.error("Please download your service account key file from Google Cloud Console and save it as "
-                            f"'{SERVICE_ACCOUNT_FILE}' in the backend directory or set GOOGLE_SERVICE_ACCOUNT_KEY environment variable.")
+                            f"'{SERVICE_ACCOUNT_FILE}' in the backend directory.")
                 return None
                 
             credentials = service_account.Credentials.from_service_account_file(
                 SERVICE_ACCOUNT_FILE, scopes=SCOPES)
                 
-            logger.info("Successfully loaded service account credentials from file")
+            logger.info("Successfully loaded service account credentials")
             return credentials
                 
         except Exception as e:
