@@ -91,6 +91,65 @@ The Deep Research feature allows you to generate comprehensive reports on specif
 - **Slow Analysis**: The initial analysis involves multiple API calls and data processing. Wait for all stages to complete.
 - **Empty Results**: If certain sections show no data, try refreshing using the "Refresh Data" button.
 
+## Deploying on Render
+
+This application is configured for easy deployment on Render.com using the included `render.yaml` file which sets up both the backend API and Streamlit frontend.
+
+### Prerequisites for Deployment
+
+1. A [Render account](https://render.com)
+2. Your repository pushed to GitHub
+3. API keys for services (see Environment Variables below)
+
+### Deployment Steps
+
+1. Push your code to GitHub:
+   ```
+   git add .
+   git commit -m "Prepare for Render deployment"
+   git push
+   ```
+
+2. In Render dashboard, click "New" and select "Blueprint"
+
+3. Connect your GitHub repository
+
+4. Render will automatically detect the `render.yaml` file and configure the services
+
+5. Review the configuration and click "Apply"
+
+6. Add all required environment variables (described below) in the Render dashboard
+
+7. Wait for both services to deploy (this may take a few minutes)
+
+8. Once deployed, your application will be available at the Render-provided URLs
+
+### Environment Variables
+
+The following environment variables should be set in the Render dashboard:
+
+#### Supervity API Credentials
+The application uses Supervity for email reports and document processing.
+
+- `SUPERVITY_API_TOKEN`: Your Supervity API token
+- `SUPERVITY_API_ORG`: Your Supervity organization ID
+- `SUPERVITY_AGENT_ID`: Your Supervity agent ID
+- `SUPERVITY_SKILL_ID`: Your Supervity skill ID
+- `SUPERVITY_EMAIL_AGENT_ID`: Agent ID for email functionality
+- `SUPERVITY_EMAIL_SKILL_ID`: Skill ID for email functionality
+
+#### Google Services
+The application uses Google services for AI, Drive integration, and more.
+
+- `GOOGLE_API_KEY`: Your Google API key for Gemini AI models
+- `GOOGLE_SERVICE_ACCOUNT_KEY`: JSON credentials for Google Drive service
+- `GOOGLE_DRIVE_FOLDER_ID`: (Optional) Folder ID in Google Drive to save reports
+
+#### News API
+- `NEWS_API_KEY`: API key from newsapi.org for fetching company news
+
+See `env.example` for a complete list of available environment variables.
+
 ## License
 
 [MIT License](LICENSE) 

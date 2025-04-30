@@ -20,7 +20,7 @@ import sys
 from markdown_to_json import dictify
 
 # API Configuration
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 SUPERVITY_API_TOKEN = "720819056d1a426837896db9"
 SUPERVITY_API_ORG = "2051"
 SUPERVITY_AGENT_ID = "cma11km3i00f5nvo7yn2bcwqs"
