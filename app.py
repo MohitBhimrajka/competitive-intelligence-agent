@@ -33,7 +33,7 @@ st.set_page_config(
     page_title="Competitive Intelligence Agent",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # Improved Custom CSS
@@ -857,84 +857,19 @@ else:
     with st.sidebar:
         st.markdown(
             """<div style="text-align: center;">
-        <h3 style="margin-bottom: 2px;">Company Analysis</h3>
-        <div class="section-divider"></div>
+        <h3 style="margin-bottom: 20px;">Agent Features</h3>
         </div>""",
             unsafe_allow_html=True,
         )
-
-        # Show company details if available
-        if st.session_state.company_details:
-            st.markdown(
-                f"""<div style="text-align: center; margin-bottom: 20px;">
-            <h2 style="color: #4361ee; margin-bottom: 2px;">{st.session_state.company_details['name']}</h2>
-            <p style="color: #6c757d; font-style: italic;">{st.session_state.company_details['industry']}</p>
-            </div>""",
-                unsafe_allow_html=True,
-            )
-
-        # Refresh button
-        if st.button("🔄 Refresh Data", key="refresh_button"):
-            with st.spinner("Refreshing data..."):
-                company_details = get_company_details(st.session_state.company_id)
-                if company_details:
-                    st.session_state.company_details = company_details
-
-                competitors_data = get_company_competitors(st.session_state.company_id)
-                if competitors_data:
-                    st.session_state.competitors = competitors_data
-
-                news_data = get_company_news(st.session_state.company_id)
-                if news_data:
-                    st.session_state.news = news_data
-
-                insights_data = refresh_company_insights(st.session_state.company_id)
-                if insights_data:
-                    st.session_state.insights = insights_data
-
-                st.success("Data refreshed successfully!")
-                # Set report ready flag if all data is available
-                if (
-                    st.session_state.company_details
-                    and st.session_state.competitors
-                    and st.session_state.news
-                    and st.session_state.insights
-                ):
-                    st.session_state.report_ready = True
-
-        # Download report option (visible only when report is ready)
-        if (
-            st.session_state.company_details
-            and st.session_state.competitors
-            and st.session_state.news
-            and st.session_state.insights
-        ):
-            st.session_state.report_ready = True
-
-        if st.session_state.report_ready:
-            st.markdown(
-                """<div class="section-divider"></div>
-            <h3 style="margin-bottom: 12px;">📊 Analysis Report</h3>""",
-                unsafe_allow_html=True,
-            )
-            report_link = get_report_download_link(
-                st.session_state.company_details,
-                st.session_state.competitors,
-                st.session_state.news,
-                st.session_state.insights,
-            )
-            if report_link:
-                st.markdown(report_link, unsafe_allow_html=True)
-                st.markdown(
-                    """<p style="font-size: 14px; color: #6c757d;">Get a complete report with all competitor analysis, news, and insights in one document.</p>""",
-                    unsafe_allow_html=True,
-                )
-
-        # Reset button
-        st.markdown("""<div class="section-divider"></div>""", unsafe_allow_html=True)
-        if st.button("🔄 Start New Analysis", key="reset_button"):
-            st.session_state.clear()
-            st.rerun()
+        
+        # Simple feature list
+        st.markdown("""
+        - 🏢 Competitor Analysis
+        - 📰 News Monitoring
+        - 💡 Strategic Insights
+        - 📑 Deep Research
+        - 💬 Conversational AI
+        """)
 
     # Check if data is loaded
     if not st.session_state.company_details:
@@ -984,7 +919,6 @@ else:
                 "💡 Insights",
                 "📑 Deep Research",
                 "💬 Chat",
-                "🔄 Integrations",
             ]
         )
 
@@ -1716,67 +1650,6 @@ else:
 
                 # Rerun to update UI
                 st.rerun()
-
-        # New Supervity API Tab (renamed to Integrations)
-        with tabs[6]:
-            st.markdown(
-                """<h2 style="color: #2c3e50; margin-bottom: 24px;">Integrations</h2>""",
-                unsafe_allow_html=True,
-            )
-
-            st.markdown(
-                """<div style="background-color: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); margin-bottom: 24px;">
-            <p>This integration allows you to send a competitive intelligence report via email. The system will generate a PDF and email it to the specified address.</p>
-            </div>""",
-                unsafe_allow_html=True,
-            )
-
-            # Initialize session state for Email Report
-            if "email_recipient" not in st.session_state:
-                st.session_state.email_recipient = ""
-            if "email_result" not in st.session_state:
-                st.session_state.email_result = None
-
-            st.markdown(
-                """<div style="background-color: #f5f7fa; border-radius: 8px; padding: 16px; margin-top: 16px;">""",
-                unsafe_allow_html=True,
-            )
-            st.markdown("### Email Settings")
-
-            # Email recipient
-            email_recipient = st.text_input(
-                "Email address:",
-                value=st.session_state.email_recipient,
-                key="email_recipient_input",
-            )
-
-            st.session_state.email_recipient = email_recipient
-
-            st.markdown("""</div>""", unsafe_allow_html=True)
-
-            # Send button
-            if st.button(
-                "Send Report via Email",
-                type="primary",
-                key="send_email_button",
-            ):
-                if st.session_state.company_id and email_recipient:
-                    with st.spinner("Sending report via email..."):
-                        # Request email report
-                        result = request_email_report(
-                            st.session_state.company_id, email_recipient
-                        )
-                        st.session_state.email_result = result
-
-                        if result["status"] == "accepted":
-                            st.success("✓ Report generation and email delivery initiated")
-                        else:
-                            st.error(f"Error: {result['detail']}")
-                else:
-                    if not st.session_state.company_id:
-                        st.warning("Please select a company first.")
-                    if not email_recipient:
-                        st.warning("Please enter an email address.")
     else:
         # Still waiting for data
         st.markdown("### Loading Data")
